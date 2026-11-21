@@ -1,160 +1,329 @@
-# Thirdeye · DrishtiGuide AI
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Thirdeye · DrishtiGuide AI" width="100%">
+</p>
 
-## Quick start (3 steps)
+<p align="center">
+  <a href="https://github.com/1kailas/Thirdeye/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/1kailas/Thirdeye/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-0b6e6e">
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776ab">
+  <img alt="Android 8.0+" src="https://img.shields.io/badge/android-8.0%2B-3ddc84">
+  <img alt="Powered by Sarvam AI" src="https://img.shields.io/badge/powered%20by-Sarvam%20AI-f2b544">
+  <img alt="Built with Devin" src="https://img.shields.io/badge/built%20with-Devin-6e56cf">
+</p>
 
-1. Run the server: `./run.sh` (reads `.env`; see Setup below).
-2. On this PC open `http://127.0.0.1:8000/pair` and scan the QR code with the
-   phone camera — it pairs the app with the server address and token.
-3. In the app tap **Start service**, grant camera/microphone, and enable the
-   key service in Accessibility settings. Hold **Volume Up** to ask.
+<h3 align="center">A third eye you can hold. Press a key, ask in your own language, and hear the answer in Malayalam.</h3>
 
-Docs: [architecture](docs/ARCHITECTURE.md) · [demo script](docs/DEMO.md) ·
-[Android build/install](android/README.md)
+**Thirdeye (DrishtiGuide AI)** turns an ordinary Android phone into a hands-free visual assistant for blind and low-vision people. Press **Volume Up** to hear what is in front of you. **Hold it** to ask a question, then let go. The phone takes the photo, listens to your voice, and speaks a short answer in natural Malayalam. It can read labels, describe scenes, and tell you exactly which key on a remote to press, such as *"fourth row from the bottom, third key from the left"*.
 
-## Problem statement
+> Built at **HackaThoni · The Houseboat Hackathon** (Alappuzha, 21-22 Nov 2026) for **Track 03 "Beyond the Screen"**, with a cross-track in **Track 02 "Beyond English"**. See [Hackathon track](#hackathon-track).
 
-Blind and low-vision people in Kerala often cannot use everyday appliances independently. Washing-machine panels, TV remotes and fan regulators rely on small printed labels, symbols and touch-less displays. Most existing visual-assistance tools are English-first, need a screen interaction to start, or describe a scene without helping the user act on it safely.
+<p align="center">
+  <img src="docs/images/app-main.png" alt="The DrishtiGuide Android app: setup checklist, connection card, how-to-use and the try-it button" width="560">
+  <br><em>The Android client (Material 3, dark mode, TalkBack-friendly). The server address is redacted.</em>
+</p>
 
-Thirdeye (DrishtiGuide AI) is a Malayalam-first, hands-free visual assistant. The user holds a phone, presses a hardware key, and either gets an immediate spoken description of what the camera sees or asks a question by voice. For appliances it guides one verified step at a time.
+---
+
+## Table of contents
+
+- [Why this exists](#why-this-exists)
+- [What it can do](#what-it-can-do)
+- [How it works](#how-it-works)
+- [Hackathon track](#hackathon-track)
+- [How Sarvam AI is used](#how-sarvam-ai-is-used)
+- [Built with Devin](#built-with-devin)
+- [Quick start](#quick-start)
+- [Using it](#using-it)
+- [Spatial guidance: "where is the button?"](#spatial-guidance-where-is-the-button)
+- [Speed](#speed)
+- [Debugging tools](#debugging-tools)
+- [Configuration](#configuration)
+- [Security, privacy and safety](#security-privacy-and-safety)
+- [Testing](#testing)
+- [Project layout](#project-layout)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why this exists
+
+Blind and low-vision people in Kerala often cannot use everyday objects on their own. Remote controls, washing-machine panels, medicine strips and packaged food all depend on small printed labels. Most visual-assistance tools are English-first, need the user to find and tap a screen, or describe a scene without helping the person act on it.
+
+Thirdeye is built around three ideas:
+
+1. **No screen.** The trigger is a hardware key. It works with the app in the background and, on supported phones, with the screen off.
+2. **Malayalam first.** You can speak Malayalam, English or Hindi. The answer always comes back as spoken Malayalam.
+3. **Precise, not vague.** For controls, it counts rows and keys in code instead of saying "somewhere near the top", and it will not guess when it cannot see clearly.
+
+## What it can do
+
+| Ability | Example | How |
+| --- | --- | --- |
+| **Describe the scene** | Quick press with no question: *"In front of you there is a wooden table with two green bottles."* | `general` route |
+| **Answer any question about the photo** | Hold and ask *"What is the time on the screen?"* | `general` route, 1-3 short sentences |
+| **Read text aloud** | *"Read this label."* | Vision model, text copied exactly |
+| **Find a key by counting** | *"Where is the exit button?"* gives *"'EXIT' is in the fifth row from the top, first key from the left. Second row from the bottom."* | `locate` route, see below |
+| **Guide your finger** | With a finger visible: *"Move one key left and two rows down."* | `locate` route |
+| **Step-by-step appliance help** | *"How do I start this washing machine?"* gives one verified step at a time | `guide` route, before/after photo check |
+| **Voice commands** | *repeat, stop, done, next step, where is the button, start over* (Malayalam and English) | Intent table |
+| **Safety refusal** | Gas, mains electricity, medical and industrial equipment get a caution, not instructions | Prompt rules and the guide schema |
+| **Admit uncertainty** | Blurry or cut-off label gives *"please take a clearer photo"* | Structured output checks |
 
 ## How it works
 
-| Piece | Role |
+```mermaid
+flowchart LR
+    subgraph Phone["Android phone (DrishtiGuide app)"]
+      K["Volume Up<br/>quick press / hold"] --> S["Foreground service<br/>CameraX + microphone"]
+      S -->|"JPEG + WAV"| N["Streaming client"]
+      P["Audio queue<br/>plays first sentence at once"]
+    end
+    subgraph PC["PC (FastAPI server)"]
+      A["/api/phone/ask"] --> R{"Router"}
+      R -->|"question"| G["general answer"]
+      R -->|"where is key X"| L["locate: key grid + counting in code"]
+      R -->|"do a task"| T["guide: verified steps"]
+    end
+    subgraph Sarvam["Sarvam AI"]
+      STT["saaras:v4 speech-to-text"]
+      V["gemma4 vision"]
+      TTS["bulbul:v4-flash Malayalam TTS"]
+    end
+    N --> A
+    A --> STT
+    G --> V
+    L --> V
+    T --> V
+    A --> TTS
+    TTS -->|"NDJSON audio parts"| P
+```
+
+One turn, in plain words:
+
+1. You press or hold **Volume Up**. The phone buzzes, takes the photo and (on hold) records your voice while the key is down.
+2. On release, the app uploads the photo and recording to your PC over Tailscale or Wi-Fi. A quiet tick plays while it thinks.
+3. The server transcribes your speech (any of Malayalam, English or Hindi), decides what you want, and asks the vision model.
+4. The reply is split into sentences, and each is turned into Malayalam speech **in parallel**. The phone starts speaking the first sentence while the others are still being generated.
+
+More detail, with the API contract and failure handling, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Hackathon track
+
+**Event:** HackaThoni, *The Houseboat Hackathon*, Alappuzha, 21-22 November 2026.
+
+| | Track | Fit |
+| --- | --- | --- |
+| **Primary** | **03 · Physical-world computing: "Beyond the Screen"**. *Build software that understands or responds to the physical world. Work with images, movement, location or sensor inputs instead of relying only on text prompts.* | Thirdeye's input is the camera and a hardware key, not a text box. Its "possible direction" **Visual assistance** is the whole product: scene description, label reading, and key-by-key spatial guidance. The hold-to-ask gesture is a sensor-driven interaction with no screen. |
+| **Cross-track** | **02 · Voice & language: "Beyond English"**. *Use Sarvam's language and speech tools to make technology more useful for people who prefer Indian languages or voice interaction.* | Speech in (Malayalam, English, Hindi, auto-detected), Malayalam speech out, Sarvam STT, vision and TTS in every turn. Its "possible directions" **Malayalam voice interfaces** and **Speech-led workflows** map directly. |
+
+The scope is deliberately focused. The result is a working demo on a real phone, with a measurable latency and a script in [docs/DEMO.md](docs/DEMO.md).
+
+## How Sarvam AI is used
+
+Every turn uses three Sarvam services. The server holds the API key, so it never reaches the phone.
+
+| Stage | Sarvam service | Model | Why it fits |
+| --- | --- | --- | --- |
+| Hear | Speech-to-Text REST | `saaras:v4`, `language_code=unknown` | Indic-first recognition with automatic language detection. A user can speak Malayalam, English or Hindi without changing a setting. |
+| See | Chat Completions v2 with image input | `gemma4` (fallback `glm5.3-flash`) | Fast image understanding through `data:` URLs. We use strict `json_schema` structured output so the app gets typed results (`Answer`, `Locate`, `Guidance`, `Verification`) instead of free text. |
+| Speak | Text-to-Speech REST | `bulbul:v4-flash`, `ml-IN` | Natural Malayalam voice. Calls run in parallel per sentence to get the first sound out sooner. |
+
+Engineering notes from working with the APIs:
+
+- **Structured output hardening.** Under strict JSON schema, `gemma4` sometimes padded its answer with blank lines until it hit the token limit, which truncated the JSON. We now ask for a compact single-line object and retry once if the output is unparseable or cut off. In live tests, 5 of 5 appliance tasks succeeded after the change, in 2-6 seconds.
+- **Language handling.** Detection is delegated to `saaras:v4`. The answer language is fixed to Malayalam in the prompt so that the voice output stays consistent.
+- **Cost awareness.** Short replies (1-3 sentences) keep output tokens, TTS time and listening time low. The system prompts are stable so Sarvam's prompt caching can apply.
+
+## Built with Devin
+
+This project was built end to end with **[Devin](https://devin.ai)** (Cognition's AI software engineer, running in Devin Desktop) as the pair programmer, working from the real phone and the real Sarvam APIs rather than mocks alone.
+
+- **Design and API research.** Devin read the Sarvam documentation, checked model IDs, speaker names and limits, and told us early that Android cannot expose power-button hold and release. That moved the trigger to Volume Up.
+- **Full-stack implementation.** The FastAPI phone API, routing, streaming, the key-grid locate composer, the Kotlin app (foreground service, CameraX, audio recorder, accessibility key filter, trigger state machine), the Material 3 UI, CI and docs.
+- **On-device debugging over adb.** Devin installed the APK, tapped through the install prompts, read `logcat`, and found real bugs that unit tests could not:
+  - `Camera is not active`: the service never reached the started state because `onStartCommand` did not call `super`.
+  - The accessibility service was greyed out by Android's "Restricted settings" for sideloaded apps, so the app now guides the user through it.
+- **Measured, not guessed.** Latency was benchmarked before and after each change, which is how streaming and per-sentence TTS ended up cutting time to first sound for a descriptive question from about 2.8 s to about 1.2 s.
+- **Delegation with review.** A lead agent planned the changes and a second agent implemented and built them. Every diff was read before it landed, which caught bugs such as a service that would crash at start-up (a `Context` used in a field initialiser), stale timers cutting a recording short, a microphone left open after a very short press, and corrupted Malayalam strings in generated text.
+- **Honest limits.** Devin could not hear the audio or judge Malayalam fluency, so the quality of the spoken Malayalam was checked by its maker, and a review by native speakers and blind users is still needed.
+
+## Quick start
+
+### 1. The server (your PC)
+
+```sh
+git clone https://github.com/1kailas/Thirdeye.git
+cd Thirdeye
+cp .env.example .env && chmod 600 .env
+```
+
+Edit `.env`:
+
+```sh
+SARVAM_API_KEY=<your key from dashboard.sarvam.ai>
+CAMERA_URL=off
+HOST=0.0.0.0
+PHONE_TOKEN=<run: python -c "import secrets;print(secrets.token_urlsafe(32))">
+```
+
+Then start it:
+
+```sh
+./run.sh        # creates .venv and installs dependencies on first run
+```
+
+### 2. The phone
+
+```sh
+cd android
+./gradlew assembleDebug                         # JDK 17 + Android SDK 34
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+On the phone: open **DrishtiGuide**, tap **Grant**, enable the **key service** in Accessibility settings, then tap **Start service**. The checklist in the app shows what is missing. On Android 13+ the key service may be greyed out for a sideloaded app. Install with `adb install` as above, or use the in-app **Allow restricted settings** button. Full steps are in [android/README.md](android/README.md).
+
+### 3. Pair
+
+With the server running, open `http://127.0.0.1:8000/pair` on the PC and scan the QR with the phone camera. If the camera app cannot open the link, copy the link text and tap **Paste pairing link** in the app. Or type `http://<pc-address>:8000` and the token by hand. Use Tailscale or a trusted Wi-Fi network, because the link is plain HTTP.
+
+Run `python -m unittest discover -s tests` to check the server before you try it on a phone.
+
+## Using it
+
+| Gesture | What happens |
 | --- | --- |
-| Android phone app (`android/`) | Captures the trigger (Volume Up), takes the photo with the rear camera, records the question while the key is held, uploads both, and plays the spoken Malayalam answer. Works with the screen off through a foreground service and an accessibility key filter. Has a debug history screen. |
-| PC server (`app.py`, FastAPI) | Holds the Sarvam API key, validates and re-encodes the photo, runs speech-to-text, picks a route, calls the vision model, synthesises Malayalam speech and returns it. Also serves the browser UI and a `/debug` page. |
-| Sarvam AI | `saaras:v4` speech-to-text (auto language detection), `gemma4` vision, `bulbul:v4-flash` Malayalam text-to-speech. |
+| **Quick press** Volume Up | Photo, then a spoken description of what is in front of you. |
+| **Press and hold** | Photo immediately, a vibration pattern, then your voice is recorded while you hold (up to 20 s). Release to send. |
+| **Press while it is talking** | Stops the reply and starts a new request. |
 
-Gestures on the phone:
+Things to try: *"What does this say?"*, *"Is this the right medicine strip?"*, *"What is in front of me?"*, *"Where is the exit button?"*, *"How do I start this washing machine?"*. Say *"stop"*, *"repeat"*, *"done"*, *"next step"* or *"start over"* at any time. Malayalam equivalents work too.
 
-- **Quick press of Volume Up**: take a photo and hear a description of the scene.
-- **Press and hold**: the photo is taken at once and the phone vibrates. Speak while holding, release to send photo and voice, and hear the answer.
+## Spatial guidance: "where is the button?"
 
-Routing on the server:
+This is the feature we built for the remote-control case.
 
-- **General route**: a question about the photo (what is this, read this, what is ahead) is answered directly in Malayalam, whatever language the user spoke.
-- **Appliance route**: requests to operate or locate a control on a washer, remote or fan use structured guidance, one step at a time. A step is only confirmed when before and after photos show the change, and gas, mains, medical and industrial equipment are refused with a safety note.
-- Voice commands work in Malayalam and English (`repeat`, `done`, `next step`, `where is the button`, `stop`, `start over`, …); anything else is treated as a question about the photo and answered directly in one to three short Malayalam sentences.
+When you ask where a key is, the vision model does **not** write the directions. It returns a small grid map: the rows of keys from top to bottom, each row's labels from left to right, the target key's row and column, and (if your finger is visible) the key under your fingertip. **Plain Python code then does the counting and writes the Malayalam sentence.** Enumerating keys is something vision models do reliably; free-form "it's near the middle-left" is not.
 
-Security: the phone talks to the server with a bearer token (`PHONE_TOKEN`) over Tailscale or the local network. The browser UI and debug pages stay reachable from the PC only. Photos and voice go to Sarvam for processing, and the Sarvam key never leaves the PC.
+```text
+Q: "Where is the exit button?"        grid the model returned
+                                      [POWER, MUTE]
+reply: 'EXIT' is in the fifth row     [1, 2, 3]
+from the top, first key from the      [4, 5, 6]
+left, second row from the bottom,     [7, 8, 9]
+next to '0'.                          [EXIT, 0, OK]   <- target (row 5, col 1)
+                                      [◀, ▲, ▼, ▶]
 
-## Status
-
-Working prototype. The server has an offline test suite (`python -m unittest discover -s tests`) and the Android app has JVM unit tests for the trigger state machine, WAV writer and history store. Whether Volume Up is delivered with the screen off varies by phone model. Android does not expose power-button hold and release to apps, so the volume key is the trigger.
-
-DrishtiGuide helps blind and low-vision users locate controls on everyday appliances and work through one task at a time in spoken and written Malayalam. It runs as one local Python process on the laptop. An optional IP Webcam stream on the Android phone supplies the camera for the browser UI, and the same phone can instead run the DrishtiGuide phone client, which takes the photo itself, records a Malayalam voice note, uploads both, and plays the spoken reply. Sarvam supplies image analysis, Malayalam speech output, and optional microphone transcription.
-
-## Setup on EndeavourOS / Arch Linux
-
-The simplest setup uses the phone client below and needs no IP Webcam stream. For the browser UI with a live preview, continue with the camera steps.
-
-1. In IP Webcam on the Android phone, select the **rear camera** and start the server. Use the highest stable resolution that lets you read the panel. If possible, keep the phone on the same angle while taking before and after photos. Skip this step when using only the phone client; set `CAMERA_URL=off` in `.env` instead.
-2. Connect the phone and laptop through Tailscale or a shared network. From the laptop, check that the camera responds. Replace the address below with the one shown by IP Webcam.
-
-   ```sh
-   curl -sS --connect-timeout 4 --max-time 5 -D - -o /dev/null http://100.109.140.21:8080/video
-   ```
-
-   Look for HTTP 200 and a multipart content type. The command can reach its time limit after receiving data because the stream stays open. DrishtiGuide independently requires a decoded JPEG before reporting the camera ready.
-
-3. If the project does not have a `.env` file yet, copy the template and set `SARVAM_API_KEY`. An environment variable set before launch takes precedence.
-
-   ```sh
-   cp -n .env.example .env
-   chmod 600 .env
-   ```
-
-4. From the project directory, start DrishtiGuide. The launcher creates `.venv` if needed and installs Uvicorn and the other Python dependencies there.
-
-   ```sh
-   ./run.sh
-   ```
-
-5. Open `http://127.0.0.1:8000` in Firefox or Chromium. Activate **തുടങ്ങാൻ സഹായം കേൾക്കുക** to hear the camera status and how to start. Allow microphone access if you choose to dictate a question or command.
-
-After setup, you can also launch with `.venv/bin/python app.py`.
-
-## ഉപയോഗിക്കേണ്ട വിധം
-
-- പാനലിലെ അക്ഷരങ്ങൾ തെളിഞ്ഞു കാണുന്ന വിധം ഫോൺ വയ്ക്കുക. **ചിത്രമെടുത്ത് പരിശോധിക്കുക** അമർത്തുക.
-- എന്ത് ചെയ്യണമെന്ന് എഴുതുകയോ **ചോദ്യം പറയുക** അമർത്തി പറയുകയോ ചെയ്യുക. വീണ്ടും അമർത്തുമ്പോൾ റെക്കോർഡിങ് അയയ്ക്കും. മൈക്രോഫോൺ അനുമതി നൽകിയ ശേഷം `V` അമർത്തിപ്പിടിച്ച് സംസാരിക്കുകയും ചെയ്യാം.
-- ബട്ടണോ നോബോ കണ്ടെത്താൻ **നിയന്ത്രണം എവിടെ?** അമർത്തുക. തിരിച്ചറിയാൻ പറ്റുന്ന ഭാഗവുമായി താരതമ്യപ്പെടുത്തി അതിന്റെ സ്ഥാനം പറയും. **ഈ ഘട്ടം മറ്റൊരു രീതിയിൽ വിശദീകരിക്കുക** തുറന്ന് ലളിതമായോ വിശദമായോ നിർദേശം കേൾക്കാം.
-- ഒരു ഘട്ടം ചെയ്ത ശേഷം **ചെയ്തു · പരിശോധിക്കുക** അമർത്തുക, അല്ലെങ്കിൽ **ചെയ്തു** എന്നു പറയുക. ചിത്രം വ്യക്തമായില്ലെങ്കിൽ സഹായിയുടെ നിർദേശം അനുസരിച്ച് മറ്റൊരു ചിത്രം എടുക്കുക.
-- റിമോട്ട് അമർത്തിയതുപോലുള്ള ഒരു പ്രവൃത്തിയുടെ ഫലം ഫോട്ടോയിൽ കാണാനാകില്ലെങ്കിൽ, നിങ്ങൾ ചെയ്തുകഴിഞ്ഞെന്ന് ഉറപ്പായ ശേഷം **സ്ഥിരീകരിക്കാതെ തുടരുക** അമർത്തുക.
-- അക്ഷരങ്ങൾ ചെറുതാണെങ്കിൽ **ക്യാമറയും ചിത്രഭാഗവും** തുറന്ന് വലുപ്പവും ചിത്രഭാഗത്തിന്റെ സ്ഥാനവും തിരഞ്ഞെടുക്കുക. ആ ഭാഗം അടുത്ത ചിത്രത്തിന് ഉപയോഗിക്കും.
-- **വീണ്ടും കേൾക്കുക** അമർത്തിയാൽ ഏറ്റവും പുതിയ മറുപടി വീണ്ടും വായിക്കും. **ശബ്ദവേഗം** ഉപയോഗിച്ച് പതുക്കെയോ വേഗത്തിലോ കേൾക്കാം. **നിർത്തുക** അമർത്തിയാൽ ശബ്ദവും ഇപ്പോഴത്തെ അഭ്യർത്ഥനയും നിർത്തും.
-- **ദൗത്യം മായ്ക്കുക** അമർത്തിയാൽ ദൗത്യവും അതിന്റെ ചിത്രങ്ങളും മായും.
-
-The interface includes skip links, visible keyboard focus, and live status messages. You can turn off single-letter shortcuts. If you use a screen reader and prefer one voice, uncheck **മറുപടികൾ സ്വയം വായിക്കുക**. You can still request an individual spoken reply. If the browser blocks automatic playback, activate **വീണ്ടും കേൾക്കുക** to play the prepared clip.
-
-## Configuration and behavior
-
-- `CAMERA_URL` defaults to the Tailscale URL above. Set it to `off` (or `none`, case-insensitive) to run without a camera stream; the browser UI still works and the phone client supplies every photo. Use **ക്യാമറയും ചിത്രഭാഗവും** to change it for the running session. You can paste the IP Webcam home address from the browser, such as `http://192.168.1.50:8080/`. DrishtiGuide uses its `/video` endpoint. Set it in `.env` to keep it across restarts. `CAMERA_ROTATION` accepts 0, 90, 180, or 270 degrees. The rotation button makes a temporary adjustment.
-- `IMAGE_MAX_WIDTH` caps the long edge of the analysis image. The app crops from the original frame before resizing. `JPEG_QUALITY` defaults to 82. The preview uses smaller local JPEGs and recovers automatically after interrupted connections.
-- `VISION_MODEL` defaults to `gemma4`. If the selected model is unavailable to your account, the interface shows the Sarvam HTTP status and the configured alternative. To test GLM on a difficult panel, set `VISION_MODEL=glm5.3-flash` and restart. GLM uses low reasoning effort. Compare the accuracy of readable labels and before-and-after decisions on the same panel before switching. [Sarvam Chat Completion V2](https://docs.sarvam.ai/api-reference/chat/chat-completions-v2)
-- Speech output uses `TTS_MODEL=bulbul:v4-flash` with Malayalam (`ml-IN`). Set `TTS_VOICE` to another compatible Sarvam voice or `TTS_PACE` to change the base speaking pace. The playback speed selector works independently. [Sarvam Bulbul](https://docs.sarvam.ai/api/api-guides-tutorials/models/bulbul)
-- `STT_MODEL=saaras:v4` uses transcription mode with `LANGUAGE_CODE=ml-IN`. Voice recordings use the laptop browser microphone and are capped at 20 seconds. [Sarvam Speech-to-Text REST](https://docs.sarvam.ai/api/api-guides-tutorials/speech-to-text/rest-api)
-- The server binds to `HOST` (default `127.0.0.1`). Any non-localhost bind requires a `PHONE_TOKEN` of at least 24 characters or the app refuses to start. The browser UI and the phone API both stay reachable only from this machine or with the bearer token. It holds one in-memory session shared by tabs and the phone. Requested still photographs, microphone recordings, relevant task context, and text to be read aloud go to Sarvam. Camera video stays local. The interface and application logs exclude the API key and the phone token.
-- This is an assistive prototype for low-risk household controls, especially washing-machine panels and remotes. It needs visible evidence to confirm a change. An explicit bypass records the step as unverified.
-
-## Phone client
-
-The Android app in `android/` turns the phone into the client: it takes the photo with its own camera, records a Malayalam voice note, uploads both to the laptop, and plays the spoken Malayalam reply. The laptop keeps doing all the vision, transcription, and speech work.
-
-Server setup:
-
-1. In `.env`, set `CAMERA_URL=off` (the phone supplies every photo, so no IP Webcam stream is needed), `HOST=0.0.0.0`, and `PHONE_TOKEN` to a random secret of at least 24 characters. Generate one with `python -c "import secrets;print(secrets.token_urlsafe(32))"` and keep `.env` at `chmod 600`.
-2. The easiest pairing is the QR page: with the server running, open `http://127.0.0.1:<port>/pair` on the PC and scan the QR with the phone camera — the `thirdeye://pair` link fills in the server address and token automatically. You can also enter `http://<address>:8000` plus the token by hand. The app talks plain HTTP, so use Tailscale or a trusted LAN, never a public network.
-3. `GET /api/phone/ping` returns `{"ok":true,"ai_ready":bool}` and `POST /api/phone/ask` accepts `{"image_b64","audio_b64","audio_type"}` and always answers `{"ok","reply","transcript","audio_b64","audio_type"}`. Both require `Authorization: Bearer <PHONE_TOKEN>`.
-
-Building and installing the app (see `android/README.md` for details):
-
-```sh
-cd android && ./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+Finger on '5' (row 3, col 2):  "Move one key left and two rows down."
 ```
 
-First run: grant Camera, Microphone and notification permissions, enable the **DrishtiGuide key service** in Accessibility settings, tap **Start service**, and disable battery optimization for the app so the foreground service survives screen-off. On Android 13+ a sideloaded APK may show the service greyed out under "Restricted settings" — use the app's **Allow restricted settings** button (App info → ⋮ menu), or install with `adb install` which is not restricted.
+- It remembers the last target, so *"and now?"* after you move your finger keeps guiding to the same key.
+- It refuses to guess: unreadable, rotated or cut-off photos produce a request for a better picture.
+- On our synthetic remote, 9 of 9 live runs returned the correct grid and the correct sentence, and an absent key (*"volume up"*) was reported as not found.
+- The grid is shown on the `/debug` page, so you can see exactly what the model saw.
 
-Using it: press and release **Volume Up** for a quick photo-and-answer, or press and hold **Volume Up** to take a photo immediately, keep holding to record a voice question, and release to send both. A press while a request is still uploading is ignored with an error tone; a press during reply playback stops the reply and starts the new request. The on-screen test button offers the same gestures.
+<p align="center">
+  <img src="docs/images/debug-page.png" alt="The debug page showing a photo, the key grid with the target highlighted, the transcript, the reply and timings" width="560">
+  <br><em>The <code>/debug</code> page: uploaded photo, key grid (target in green, finger outlined), transcript, reply and timings. The remote is a synthetic test image.</em>
+</p>
 
-Limitations: Android does not expose power-button hold or release to apps, so Volume Up is the trigger. Whether a key press reaches the service while the screen is off varies by device and OEM; keep the phone awake or disable battery optimization if presses are missed. While the service runs, Volume Up is consumed for DrishtiGuide instead of changing the media volume.
+## Speed
 
-## Test and measure
+The slow parts of a turn are speech-to-text, the vision model and speech synthesis. Three changes make it feel faster without changing quality:
 
-Run the offline suite with dependencies installed.
+1. **Streaming reply.** The server answers as newline-delimited JSON: the text first, then audio parts as each is ready. The phone plays part 1 while part 2 is still being made.
+2. **Per-sentence parallel TTS.** The reply is split into at most three parts at sentence boundaries and synthesised concurrently.
+3. **Camera pre-warm.** The camera starts opening on key-down, so a quick press does not wait for it.
+
+Measured against the real Sarvam APIs from this PC, four runs per cell, an English-spoken question with a 720x1280 test photo of a remote. Results vary from run to run:
+
+| Question | Mode | Time to first sound (median / worst) | Total |
+| --- | --- | --- | --- |
+| "What is in this picture? Describe it in detail." | one response | 2.81 s / 5.12 s | 2.81 s |
+| | **streaming** | **1.19 s / 1.92 s** | 1.22 s |
+| "Where is the exit button?" | one response | 1.96 s / 5.11 s | 1.96 s |
+| | **streaming** | **1.79 s / 3.38 s** | 1.79 s |
+
+On the phone, the History screen shows *first sound* and *network* timings for every turn. Reproduce the table with `python scripts/bench_stream.py`.
+
+## Debugging tools
+
+- **`/debug` (PC, localhost only).** Every phone request with its exact photo, a player for your recording, the transcript, detected language, route, key grid and timings. Files are kept in `debug/` (last 30). Turn it off with `PHONE_DEBUG=0`.
+- **Debug history (phone).** The last 20 turns with the uploaded photo, your recording, the reply and timings, and buttons to replay either.
+- **`/pair` (PC, localhost only).** QR pairing page.
+- **Benchmarks.** `scripts/bench_phone.py` and `scripts/bench_stream.py`.
+- **`scripts/make_demo_remote.py`** draws a synthetic remote so you can test the locate feature without a real photo.
+
+## Configuration
+
+All settings live in `.env` (copy `.env.example`). Environment variables set before launch win.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SARVAM_API_KEY` | none | Required. Stays on the PC. |
+| `PHONE_TOKEN` | none | Bearer token for the phone API. Required when `HOST` is not localhost, at least 24 characters. |
+| `HOST` / `PORT` | `127.0.0.1` / `8000` | Use `0.0.0.0` so the phone can connect. |
+| `CAMERA_URL` | IP Webcam URL | `off` when the phone supplies photos (recommended). |
+| `VISION_MODEL` / `VISION_FALLBACK_MODEL` | `gemma4` / `glm5.3-flash` | Vision models. |
+| `STT_MODEL` / `LANGUAGE_CODE` | `saaras:v4` / `unknown` | `unknown` auto-detects speech; `ml-IN` pins Malayalam. |
+| `TTS_MODEL` / `TTS_VOICE` / `TTS_PACE` | `bulbul:v4-flash` / `simran_en_customer` / `0.95` | Malayalam voice settings. |
+| `IMAGE_MAX_WIDTH` / `JPEG_QUALITY` | `1280` / `82` | Image sent to the model. |
+| `PHONE_DEBUG` | `1` | Keep the `debug/` archive and `/debug` page. |
+| `PUBLIC_URL` | none | Extra address to offer on the `/pair` page. |
+
+An optional browser UI (laptop camera or IP Webcam stream, typed or dictated questions) is still included. See [docs/BROWSER_UI.md](docs/BROWSER_UI.md).
+
+## Security, privacy and safety
+
+- **Token-protected phone API.** `Authorization: Bearer <PHONE_TOKEN>`, compared in constant time. The server will not bind to a non-local address without a token.
+- **Local-only pages.** The browser UI, `/debug` and `/pair` only accept connections from the PC itself.
+- **Limits.** Photos up to 16 MP / 6 MB, recordings up to 3 MB, requests up to 10 MB.
+- **Your data.** Photos and voice go to Sarvam for processing and are not stored by the app on any server. They stay in the phone's History and the PC's `debug/` folder, which you can clear or switch off. The Sarvam key never leaves the PC.
+- **Plain HTTP.** The app talks HTTP, so use Tailscale or a network you trust. Never expose the server to the public internet.
+- **Safety behaviour.** The assistant refuses to give operating instructions for gas, mains electricity, medical or industrial equipment, never identifies people, and says when it cannot see something.
+- **Not a certified safety device.** This is an assistive prototype for low-risk everyday tasks. Do not rely on it for medicine dosage, hazards or navigation.
+
+## Testing
 
 ```sh
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests          # server: routing, locate maths, streaming, auth, debug
+cd android && ./gradlew testDebugUnitTest      # app: trigger state machine, audio queue, stream parser, history
 ```
 
-The suite exercises the worker with JPEG fixtures and simulated interruptions, the guidance and verification state transitions, and the Sarvam request and error handling. Complete these checks on your hardware with the camera and a live Sarvam key.
+CI runs both on every push, and builds the debug APK as an artifact. The suites are fully offline. Live Sarvam checks are opt-in: `DRISHTIGUIDE_LIVE=1 python -m unittest discover -s tests -p test_live.py`.
 
-With the virtual environment active, the following smoke test checks the configured Sarvam model, captures a real phone image for a Malayalam reply, and requests a Malayalam clip from Bulbul. It prints the measured latencies. [Sarvam model list](https://docs.sarvam.ai/api-reference/chat/models-v2)
+## Project layout
 
-```sh
-DRISHTIGUIDE_LIVE=1 python -m unittest discover -s tests -p test_live.py -v
+```text
+app.py              FastAPI server: phone API, routing, streaming, debug and pairing pages
+task_engine.py      Schemas, prompts, task state, locate composer (Malayalam sentences)
+sarvam_client.py    Sarvam REST client (STT, vision, TTS) with retries and structured output
+camera.py           Optional IP Webcam reader (CAMERA_URL=off for phone-only)
+index.html          Optional browser UI
+android/            Kotlin app: service, key filter, state machine, audio queue, Material 3 UI
+tests/              Offline server tests
+scripts/            Benchmarks and a synthetic remote generator
+docs/               Architecture, demo script, browser UI notes, images
 ```
-
-| Scenario | Live check |
-| --- | --- |
-| Washing machine | Show a readable panel and ask to select a specific programme. Confirm a single instruction, then photograph the dial after turning it. |
-| TV remote | Show the remote and ask where volume-up is. Check the written position against the remote's actual landmarks. |
-| Unreadable label | Blur or cover the relevant label. The app should ask for a clearer photo. Try selecting a crop and capturing again. |
-| Follow-up | With a step active, ask **ഏത് ബട്ടണാണ്?**. Check that the answer refers to the same control and the step stays active. |
-| Malayalam text and speech | Type **ഇത് എന്താണ്?** or dictate **ഫോട്ടോ എടുക്കൂ**. Check the displayed reply, then listen for the same reply. Test replay, slower speed, and stop. |
-| Keyboard and screen reader | Start at the skip links. Activate the help, capture, location, and verify buttons with the keyboard. Check the spoken and live status changes and confirm focus stays on the active button. |
-| Camera failure | Stop the IP Webcam server and confirm the connection error appears and is announced when app audio is enabled. Restart the phone server and wait for the preview to recover. |
-| Visual verification | Capture two clear angles with the dial unchanged first, then turn it and photograph it again from the original angle. Cover the indicator and check that the app asks for another photo. |
-| API failure | Launch a separate run with an intentionally invalid test key. Capture and check the displayed Sarvam HTTP status and recovery instructions. Restart with the valid key. The offline suite covers timeouts. |
-
-Open **കീബോർഡ് കുറുക്കുവഴികളും സമയവും** to see measured camera connection time, local frame age, capture and JPEG encoding times, Sarvam API latencies, and the elapsed browser time until the written reply and the start of its playback. Frame age measures time since the laptop received the data.
-
-The offline timing check processed 30 synthetic 1920×1080 images. Median local resize and JPEG encoding took approximately 29 ms. Live phone and Sarvam timings require the hardware and account checks above.
 
 ## Roadmap
 
-- Direct power-button trigger — not possible on Android (the OS does not expose power-button hold/release to apps); Volume Up is the current trigger.
-- On-device fallback — run STT/vision/TTS on the phone when the PC is unreachable.
-- More languages — extend beyond Malayalam/English/Hindi input while keeping Malayalam output.
-- Wearable camera — support a glasses or clip-on camera as the capture device.
+- **Continuous guidance.** Re-photograph automatically while the finger moves, instead of one photo per question.
+- **Power-button trigger.** Android does not give apps power-button hold and release, so this needs a system-level route.
+- **On-device fallback.** Offline description and speech when the PC is unreachable.
+- **Wearable camera.** A glasses or clip-on camera as the capture device.
+- **More Indian languages** for the answers, not only for the questions.
+- **Real-world evaluation** with blind users, including medicine labels and packaged food.
+
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and report security problems privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Kailasnath T.
+
+## Acknowledgements
+
+[Sarvam AI](https://www.sarvam.ai) for the Indic speech and vision models, HackaThoni for the challenge, [Tailscale](https://tailscale.com) for the private phone-to-PC link, and [Devin](https://devin.ai) as the development partner.

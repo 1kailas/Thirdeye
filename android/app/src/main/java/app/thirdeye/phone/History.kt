@@ -19,6 +19,8 @@ class History(private val dir: File, private val limit: Int = 20) {
         val error: String?,
         val imageName: String,
         val audioName: String?,
+        val firstSoundMs: Long? = null,
+        val netMs: Long? = null,
     )
 
     private val counter = AtomicLong()
@@ -34,6 +36,8 @@ class History(private val dir: File, private val limit: Int = 20) {
         ok: Boolean,
         elapsedMs: Long,
         error: String?,
+        firstSoundMs: Long? = null,
+        netMs: Long? = null,
     ) {
         dir.mkdirs()
         val id = "${System.currentTimeMillis()}-${counter.getAndIncrement()}"
@@ -55,6 +59,8 @@ class History(private val dir: File, private val limit: Int = 20) {
             .put("error", error ?: JSONObject.NULL)
             .put("image", "$id.jpg")
             .put("audio", audioName ?: JSONObject.NULL)
+            .put("first_sound_ms", firstSoundMs ?: JSONObject.NULL)
+            .put("net_ms", netMs ?: JSONObject.NULL)
         File(dir, "$id.json").writeText(meta.toString(), Charsets.UTF_8)
         trim()
     }
@@ -99,6 +105,8 @@ class History(private val dir: File, private val limit: Int = 20) {
             error = str("error"),
             imageName = json.optString("image"),
             audioName = str("audio"),
+            firstSoundMs = if (json.isNull("first_sound_ms")) null else json.optLong("first_sound_ms"),
+            netMs = if (json.isNull("net_ms")) null else json.optLong("net_ms"),
         )
     }
 }

@@ -22,6 +22,101 @@ class PhoneApi(
         val route: String?,
     )
 
+    interface StreamListener {
+        fun onMeta(meta: StreamEvent.Meta)
+        fun onAudio(index: Int, clip: ByteArray?)
+    }
+
+    data class StreamResult(val result: AskResult, val streamed: Boolean, val serverTtfaMs: Long?)
+
+    @Volatile private var active: HttpURLConnection? = null
+
+    fun cancel() {
+        val connection = active ?: return
+        Thread { runCatching { connection.disconnect() } }.start()
+    }
+
+    private fun parseResult(json: JSONObject, code: Int): AskResult {
+        val debug = json.optJSONObject("debug")
+        return AskResult(
+            ok = json.optBoolean("ok"),
+            reply = json.optString("reply"),
+            transcript = if (json.isNull("transcript")) null else json.optString("transcript"),
+            audioB64 = if (json.isNull("audio_b64")) null else json.optString("audio_b64"),
+            httpCode = code,
+            route = debug?.takeIf { !it.isNull("route") }?.optString("route"),
+        )
+    }
+
+    fun askStream(imageJpeg: ByteArray, audioWav: ByteArray?, listener: StreamListener): StreamResult? {
+        val body = JSONObject()
+            .put("image_b64", Base64.encodeToString(imageJpeg, Base64.NO_WRAP))
+            .put("stream", true)
+        if (audioWav != null) {
+            body.put("audio_b64", Base64.encodeToString(audioWav, Base64.NO_WRAP))
+            body.put("audio_type", "audio/wav")
+        }
+        val payload = body.toString().toByteArray(Charsets.UTF_8)
+        var outcome = postStream(payload, listener)
+        if (outcome == null && connectFailed) {
+            Thread.sleep(700)
+            outcome = postStream(payload, listener)
+        }
+        return outcome
+    }
+
+    private fun postStream(payload: ByteArray, listener: StreamListener): StreamResult? {
+        connectFailed = false
+        val connection = open("/api/phone/ask") ?: return null
+        active = connection
+        var responded = false
+        var meta: StreamEvent.Meta? = null
+        var ttfa: Long? = null
+        var code = 0
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("Accept", "application/x-ndjson, application/json")
+            connection.setFixedLengthStreamingMode(payload.size)
+            connection.outputStream.use { it.write(payload) }
+            code = connection.responseCode
+            responded = true
+            val type = connection.contentType.orEmpty()
+            if (code !in 200..299 || !type.contains("ndjson")) {
+                val text = readBody(if (code in 200..299) connection.inputStream else connection.errorStream)
+                val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
+                return StreamResult(parseResult(json, code), false, null)
+            }
+            BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    when (val event = StreamProtocol.parseLine(line)) {
+                        is StreamEvent.Meta -> {
+                            meta = event
+                            listener.onMeta(event)
+                        }
+                        is StreamEvent.Audio -> listener.onAudio(event.index, event.clip)
+                        is StreamEvent.Done -> {
+                            ttfa = event.ttfaMs
+                            break
+                        }
+                        null -> {}
+                    }
+                }
+            }
+        } catch (failure: Exception) {
+            connectFailed = !responded && (failure is java.net.ConnectException
+                || failure is java.net.UnknownHostException
+                || failure is java.net.SocketTimeoutException)
+        } finally {
+            active = null
+            connection.disconnect()
+        }
+        val known = meta ?: return null
+        return StreamResult(AskResult(known.ok, known.reply, known.transcript, null, code, known.route), true, ttfa)
+    }
+
     data class PingResult(val ok: Boolean, val aiReady: Boolean, val httpCode: Int)
 
     /** Returns null only when the request itself failed (DNS, timeout, refused). */

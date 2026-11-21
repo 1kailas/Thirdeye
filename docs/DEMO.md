@@ -8,7 +8,7 @@ second window to show what the phone sent and received.
 ## Scene 1 — read a label, Malayalam (≈45 s)
 
 Hold a medicine strip or a packet label in front of the phone camera.
-**Hold Volume Up**, ask in Malayalam: *"ഈ ലേബലിൽ എന്താണ് എഴുത ioh?"*
+**Hold Volume Up**, ask in Malayalam: *"ഈ ലേബലിൽ എന്താണ് എഴുതിയിരിക്കുന്നത്?"*
 Release. The phone vibrates at hold start, you hear a send tone, quiet ticks
 while it thinks, then a spoken Malayalam reading of the label text.
 Show `/debug`: the uploaded photo, the transcript, `route=general`, timings.
@@ -22,6 +22,15 @@ answer still comes back in Malayalam. Point at `/debug` `stt_language=en-IN`.
 
 Quick-press Volume Up (no voice). The phone describes the scene ahead —
 objects, colors, obstacles and their rough position.
+
+## Scene 3b — "where is the exit button?" on a remote (≈45 s)
+
+Hold a TV remote in front of the camera. **Hold Volume Up** and ask *"Where is the
+exit button?"* The reply counts for you: *"'EXIT' is in the fifth row from the
+top, first key from the left, second row from the bottom, next to '0'."* Now put
+a finger on any key, ask again, and hear *"Move one key left and two rows down."*
+Show `/debug`: the key grid the model returned, with the target highlighted and
+the finger cell outlined, so the audience sees that Python did the counting.
 
 ## Scene 4 — appliance task with verification (≈60 s)
 

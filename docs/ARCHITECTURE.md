@@ -23,14 +23,19 @@ sequenceDiagram
     API->>V: transcribe (if audio) → intent(transcript)
     alt general question / photo-only, no active task
         API->>V: answer() — Answer schema + ANSWER_SYSTEM
-        V-->>API: {is_device_task, answer_ml}
+        V-->>API: {is_device_task, wants_location, answer_ml}
+        opt wants_location
+            API->>V: locate() — key grid map
+            V-->>API: rows, target, finger
+            API->>API: compose_location() counts rows/keys in code
+        end
     else appliance task or other intent
         API->>V: guide()/verify() — Guidance schema + SYSTEM
         V-->>API: structured guidance
     end
-    API->>V: speak(reply) → mp3
-    API-->>S: {ok, reply, transcript, audio_b64, debug}
-    S->>S: MediaPlayer mp3 → TTS fallback → quiet wait-ticks meanwhile
+    API->>V: speak(part 1..3) concurrently → mp3 parts
+    API-->>S: NDJSON: meta, audio part 0, audio part 1, ..., done
+    S->>S: AudioPartQueue plays part 0 at once → TTS fallback → quiet wait-ticks meanwhile
     S-->>U: spoken Malayalam reply + haptics
 ```
 
@@ -49,6 +54,8 @@ sequenceDiagram
 
 ## Routing rules (`/api/phone/ask`)
 
+0. **Where is a key** (`wants_location=true` from `answer()`): `locate()` returns a
+   grid of the keys; `compose_location()` writes the Malayalam directions.
 1. **Photo-only press** (`capture`, no audio): no active task → `answer()`
    (general Q&A); active task → existing guide flow (resume).
 2. **Voice free text** (`query`): always `answer()` first, with
@@ -67,6 +74,10 @@ gas/mains/medical/dangerous scenes, never identifies people.
 - `POST /api/phone/ask` (Bearer `PHONE_TOKEN`)
   - request: `{"image_b64": <JPEG>, "audio_b64": <b64|null>, "audio_type": "audio/wav|audio/mp4|audio/webm|audio/ogg|null"}`
   - response (always): `{"ok", "reply", "transcript", "audio_b64", "audio_type", "debug": {"action","route","transcript_language","timings_ms"}}`
+  - with `"stream": true` the success response is `application/x-ndjson`, one JSON object per line:
+    `{"type":"meta","ok","reply","transcript","parts","debug"}`, then `{"type":"audio","index","audio_b64"}` in order
+    (`audio_b64` is `null` for a part that failed), then `{"type":"done","debug":{...,"ttfa_ms"}}`.
+    Errors before the reply is known (auth, 400/409/413/503) stay plain JSON with the same status codes.
   - statuses: 200 ok · 400 bad input · 401 bad token · 409 busy · 413 too large · 503 Sarvam/camera failure
 - `GET /pair` — localhost-only QR pairing page (deep link `thirdeye://pair?url=…&token=…`)
 - `GET /debug`, `/api/debug/items`, `/api/debug/{id}/image|audio` — localhost-only debug viewer (`PHONE_DEBUG=0` disables)
@@ -88,12 +99,33 @@ gas/mains/medical/dangerous scenes, never identifies people.
 - **Server**: busy → 409; Sarvam/camera errors → 503 with spoken Malayalam
   error; every request recorded under `debug/` with image, audio, meta.json.
 
-## Measured latency (live, `scripts/bench_phone.py 5`, this PC + Sarvam)
+## Spatial locate
 
-| kind | http | route | stt med/p95 (ms) | vision med/p95 (ms) | tts med/p95 (ms) | total med/p95 (ms) | client rtt med/p95 (ms) |
-|---|---|---|---|---|---|---|---|
-| photo | 200 | general | – | 986 / 997 | 0 / 0 | 988 / 999 | 1003 / 1013 |
-| voice | 200 | general | 383 / 458 | 1732 / 1787 | 0 / 1736 | 3003 / 3908 | 3019 / 3924 |
+For "where is the exit button?" the vision model returns a `Locate` object:
+`rows` (keys per row, top to bottom and left to right, `""` for an unlabeled key),
+the target's 1-based `target_row`/`target_col`, an optional fingertip position, and
+`upright` / `readable` / `needs_new_image` flags. `compose_location()` in
+`task_engine.py` then writes the sentence deterministically: position from the top,
+from the left and from the bottom, a nearby labelled key as a landmark, or the
+finger movement (`n keys left/right`, `n rows up/down`, "approximately" when the
+rows have different lengths). Unusable results fall back to a Malayalam request for a
+better photo. The last target is remembered for follow-ups. The grid is stored in the
+debug record and drawn on `/debug`.
 
-Voice adds STT (~0.4 s) on top of vision; photo-only is ~1 s server-side.
-End-to-end on-device is typically 3–4.5 s including capture + playback.
+## Measured latency
+
+Live, against the real Sarvam APIs from the development PC (`scripts/bench_stream.py`),
+four runs per cell, an English-spoken question and a synthetic remote photo.
+Numbers vary run to run.
+
+| Question | Mode | Time to first sound (median / worst) | Total (median) |
+|---|---|---|---|
+| Describe this picture in detail | one response | 2.81 s / 5.12 s | 2.81 s |
+| | streaming | 1.19 s / 1.92 s | 1.22 s |
+| Where is the exit button? | one response | 1.96 s / 5.11 s | 1.96 s |
+| | streaming | 1.79 s / 3.38 s | 1.79 s |
+
+Earlier component timings (`scripts/bench_phone.py`, 5 runs): photo-only about 1.0 s
+server-side; voice adds speech-to-text (median 0.38 s) before vision (median 1.7 s).
+End-to-end on the phone also includes capture and playback and is shown per turn in the
+History screen ("first sound", "net").

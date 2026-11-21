@@ -74,5 +74,5 @@
     <string name="err_no_photo">Photo capture failed. Try again.</string>
     <string name="err_network">Server unreachable. Check the address and that the PC app is running.</string>
     <string name="err_no_photo_ml">ഫോട്ടോ എടുക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.</string>
-    <string name="err_network_ml">സെർവർ-ലേക്ക് എത്താനായില്ല. വിലാസം പരിശോധിക്കുക, PC ആപ്പ് ഓണാണെന്ന് ഉറപ്പാക്കുക.</string>
+    <string name="err_network_ml">സെർവറിൽ എത്താനായില്ല. വിലാസം പരിശോധിക്കുക, കമ്പ്യൂട്ടറിലെ ആപ്പ് ഓണാണെന്ന് ഉറപ്പാക്കുക.</string>
 </resources>

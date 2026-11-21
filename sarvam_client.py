@@ -4,13 +4,15 @@ import base64
 import json
 import logging
 import os
+import threading
 from collections import OrderedDict
 from time import perf_counter
 
 import requests
 from pydantic import ValidationError
 
-from task_engine import ANSWER_SYSTEM, Answer, Guidance, SYSTEM, Verification, VERIFY_SYSTEM
+from task_engine import (ANSWER_SYSTEM, Answer, Guidance, LOCATE_SYSTEM, Locate, SYSTEM,
+                         Verification, VERIFY_SYSTEM)
 
 log = logging.getLogger("drishtiguide")
 
@@ -62,6 +64,7 @@ class SarvamClient:
         self.task_http = requests.Session()
         self.speech_http = requests.Session()
         self.speech_cache = OrderedDict()
+        self.cache_lock = threading.Lock()
 
     def close(self):
         self.task_http.close()
@@ -131,6 +134,10 @@ class SarvamClient:
             request["pending_instruction"] = task.get("pending_instruction")
         return self._vision(Answer, ANSWER_SYSTEM, request, [("current image", image)])
 
+    def locate(self, image, question, previous_target=None):
+        request = {"user_question": question or "", "previous_target": previous_target}
+        return self._vision(Locate, LOCATE_SYSTEM, request, [("current image", image)])
+
     def _vision(self, schema, system, request, images):
         content = [{"type": "text", "text": json.dumps(request, ensure_ascii=False)}]
         for name, jpeg in images:
@@ -184,9 +191,10 @@ class SarvamClient:
         return text.strip()[:500], duration
 
     def speak(self, text):
-        if text in self.speech_cache:
-            self.speech_cache.move_to_end(text)
-            return self.speech_cache[text], 0.0, True
+        with self.cache_lock:
+            if text in self.speech_cache:
+                self.speech_cache.move_to_end(text)
+                return self.speech_cache[text], 0.0, True
         data, duration = self._post(
             "/text-to-speech", "മലയാള ശബ്ദം", self.tts_model, 15, client=self.speech_http,
             json={"text": text, "model": self.tts_model, "language_code": "ml-IN",
@@ -198,7 +206,8 @@ class SarvamClient:
                 raise ValueError("Empty audio")
         except (KeyError, IndexError, TypeError, ValueError):
             raise SarvamError("മലയാള ശബ്ദം ലഭിച്ചില്ല. വീണ്ടും കേൾക്കുക അമർത്തുക.") from None
-        self.speech_cache[text] = clip
-        if len(self.speech_cache) > 24:
-            self.speech_cache.popitem(last=False)
+        with self.cache_lock:
+            self.speech_cache[text] = clip
+            if len(self.speech_cache) > 24:
+                self.speech_cache.popitem(last=False)
         return clip, duration, False

@@ -43,6 +43,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -84,6 +86,10 @@ class ThirdEyeService : LifecycleService() {
     }
 
     private var photoJob: Deferred<ByteArray?>? = null
+    private val cameraMutex = Mutex()
+    private var prewarmExpiry: Runnable? = null
+    private var requestSeq = 0
+    private var partQueue: AudioPartQueue? = null
     private var capture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -171,6 +177,7 @@ class ThirdEyeService : LifecycleService() {
 
     fun onKeyDown(repeatCount: Int) {
         tick()
+        if (repeatCount == 0) prewarmCamera()
         onSmEvent(TriggerStateMachine.KeyEvent.KeyDown(repeatCount))
     }
 
@@ -218,7 +225,10 @@ class ThirdEyeService : LifecycleService() {
                 }
             }
             TriggerStateMachine.SmAction.RejectBusy -> errorTone()
-            TriggerStateMachine.SmAction.InterruptPlayback -> releasePlayer()
+            TriggerStateMachine.SmAction.InterruptPlayback -> {
+                cancelStream()
+                releasePlayer()
+            }
             TriggerStateMachine.SmAction.CancelAll -> {
                 setUiState(UiState.READY)
                 stopRecordingInternal()
@@ -226,6 +236,7 @@ class ThirdEyeService : LifecycleService() {
                 stopWatchdog()
                 photoJob?.cancel()
                 photoJob = null
+                cancelStream()
                 releasePlayer()
                 unbindCamera()
             }
@@ -246,32 +257,86 @@ class ThirdEyeService : LifecycleService() {
         }
     }
 
+    private fun cancelStream() {
+        requestSeq++
+        partQueue?.cancel()
+        partQueue = null
+        api.cancel()
+    }
+
     private fun send(imageJpeg: ByteArray, audioWav: ByteArray?) {
         val startedAt = System.currentTimeMillis()
+        val requestId = ++requestSeq
         scope.launch {
+            var firstSoundMs: Long? = null
+            var streamReply = ""
+            val queue = AudioPartQueue(partPlayer, onFirstStart = {
+                firstSoundMs = System.currentTimeMillis() - startedAt
+                stopWaitTicker()
+                stopWatchdog()
+                setUiState(UiState.SPEAKING)
+                onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
+            }, onFinished = { played ->
+                abandonAudioFocus()
+                if (played) {
+                    onSmEvent(TriggerStateMachine.KeyEvent.PlaybackFinished)
+                } else {
+                    stopWaitTicker()
+                    stopWatchdog()
+                    setUiState(UiState.SPEAKING)
+                    onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
+                    speakLocal("reply", streamReply)
+                }
+            })
+            partQueue = queue
             try {
                 sendTone()
                 startWaitTicker()
                 startWatchdog()
-                val result = withContext(Dispatchers.IO) { api.ask(imageJpeg, audioWav) }
-                if (result == null) {
+                val listener = object : PhoneApi.StreamListener {
+                    override fun onMeta(meta: StreamEvent.Meta) {
+                        mainHandler.post {
+                            streamReply = meta.reply
+                            queue.expect(meta.parts)
+                        }
+                    }
+
+                    override fun onAudio(index: Int, clip: ByteArray?) {
+                        mainHandler.post { queue.offer(index, clip) }
+                    }
+                }
+                val outcome = withContext(Dispatchers.IO) { api.askStream(imageJpeg, audioWav, listener) }
+                if (requestId != requestSeq) return@launch
+                if (outcome == null) {
+                    queue.cancel()
                     recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
-                        System.currentTimeMillis() - startedAt, getString(R.string.err_network))
+                        System.currentTimeMillis() - startedAt, getString(R.string.err_network), null, null)
                     settleWithError(localError(true))
                     return@launch
                 }
-                stopWatchdog()
-                onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
+                val result = outcome.result
                 lastStatus = result.transcript?.let { "$it\n${result.reply}" } ?: result.reply
+                val net = if (firstSoundMs != null && outcome.serverTtfaMs != null)
+                    (firstSoundMs!! - outcome.serverTtfaMs).coerceAtLeast(0) else null
                 recordHistory(imageJpeg, audioWav, result.transcript, result.reply,
                     result.route, result.httpCode, result.ok,
-                    System.currentTimeMillis() - startedAt, null)
-                playReply(result.audioB64, result.reply)
+                    System.currentTimeMillis() - startedAt, null, firstSoundMs, net)
+                if (outcome.streamed) {
+                    streamReply = result.reply
+                    queue.done()
+                } else {
+                    queue.cancel()
+                    stopWatchdog()
+                    onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
+                    playReply(result.audioB64, result.reply)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
+                queue.cancel()
+                if (requestId != requestSeq) return@launch
                 recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
-                    System.currentTimeMillis() - startedAt, failure.message)
+                    System.currentTimeMillis() - startedAt, failure.message, null, null)
                 settleWithError(localError(true))
             }
         }
@@ -279,10 +344,45 @@ class ThirdEyeService : LifecycleService() {
 
     private fun recordHistory(image: ByteArray, audio: ByteArray?, transcript: String?,
                               reply: String?, route: String?, httpCode: Int, ok: Boolean,
-                              elapsedMs: Long, error: String?) {
+                              elapsedMs: Long, error: String?, firstSoundMs: Long?, netMs: Long?) {
         runCatching {
             history.add(image, audio, if (audio != null) "wav" else null,
-                transcript, reply ?: "", route, httpCode, ok, elapsedMs, error)
+                transcript, reply ?: "", route, httpCode, ok, elapsedMs, error, firstSoundMs, netMs)
+        }
+    }
+
+    private val partPlayer = object : AudioPartQueue.Player {
+        override fun play(clip: ByteArray, onDone: () -> Unit): Boolean {
+            return try {
+                val file = File(cacheDir, "part.mp3")
+                file.writeBytes(clip)
+                releasePlayerOnly()
+                if (audioFocusRequest == null) requestAudioFocus()
+                val player = MediaPlayer()
+                mediaPlayer = player
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                player.setDataSource(file.absolutePath)
+                player.setOnCompletionListener { onDone() }
+                player.setOnErrorListener { _, _, _ ->
+                    onDone()
+                    true
+                }
+                player.prepare()
+                player.start()
+                true
+            } catch (_: Exception) {
+                releasePlayerOnly()
+                false
+            }
+        }
+
+        override fun stop() {
+            releasePlayerOnly()
         }
     }
 
@@ -411,12 +511,16 @@ class ThirdEyeService : LifecycleService() {
         }
     }
 
-    private fun releasePlayer() {
+    private fun releasePlayerOnly() {
         mediaPlayer?.let {
             runCatching { it.stop() }
             runCatching { it.release() }
         }
         mediaPlayer = null
+    }
+
+    private fun releasePlayer() {
+        releasePlayerOnly()
         abandonAudioFocus()
     }
 
@@ -452,13 +556,14 @@ class ThirdEyeService : LifecycleService() {
 
     // ---- camera ----
 
-    private suspend fun capturePhoto(): ByteArray? {
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED) {
-            return null
-        }
-        return withContext(Dispatchers.Main) {
-            suspendCancellableCoroutine { cont ->
+    private fun cameraAllowed(): Boolean =
+        ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private suspend fun ensureCapture(): ImageCapture? = cameraMutex.withLock {
+        capture?.let { return@withLock it }
+        withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine<ImageCapture?> { cont ->
                 try {
                     val future = ProcessCameraProvider.getInstance(this@ThirdEyeService)
                     future.addListener({
@@ -468,32 +573,64 @@ class ThirdEyeService : LifecycleService() {
                             val selector = CameraSelector.Builder()
                                 .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                                 .build()
-                            val capture = ImageCapture.Builder()
+                            val bound = ImageCapture.Builder()
                                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                                 .setFlashMode(ImageCapture.FLASH_MODE_AUTO)
                                 .build()
-                            this@ThirdEyeService.capture = capture
                             provider.unbindAll()
-                            provider.bindToLifecycle(this@ThirdEyeService, selector, capture)
-                            capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
-                                override fun onCaptureSuccess(image: ImageProxy) {
-                                    val jpeg = imageToJpeg(image)
-                                    image.close()
-                                    unbindCamera()
-                                    if (cont.isActive) cont.resume(jpeg)
-                                }
-
-                                override fun onError(exception: ImageCaptureException) {
-                                    unbindCamera()
-                                    if (cont.isActive) cont.resume(null)
-                                }
-                            })
+                            provider.bindToLifecycle(this@ThirdEyeService, selector, bound)
+                            capture = bound
+                            if (cont.isActive) cont.resume(bound)
                         } catch (_: Exception) {
                             unbindCamera()
                             if (cont.isActive) cont.resume(null)
                         }
                     }, ContextCompat.getMainExecutor(this@ThirdEyeService))
                 } catch (_: Exception) {
+                    if (cont.isActive) cont.resume(null)
+                }
+            }
+        }
+    }
+
+    private fun prewarmCamera() {
+        if (capture != null || !cameraAllowed()) return
+        scope.launch {
+            if (ensureCapture() != null) {
+                prewarmExpiry?.let { mainHandler.removeCallbacks(it) }
+                val expiry = Runnable {
+                    prewarmExpiry = null
+                    if (photoJob == null) unbindCamera()
+                }
+                prewarmExpiry = expiry
+                mainHandler.postDelayed(expiry, 4_000)
+            }
+        }
+    }
+
+    private suspend fun capturePhoto(): ByteArray? {
+        if (!cameraAllowed()) return null
+        prewarmExpiry?.let { mainHandler.removeCallbacks(it) }
+        prewarmExpiry = null
+        val ready = ensureCapture() ?: return null
+        return withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                try {
+                    ready.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
+                        override fun onCaptureSuccess(image: ImageProxy) {
+                            val jpeg = imageToJpeg(image)
+                            image.close()
+                            unbindCamera()
+                            if (cont.isActive) cont.resume(jpeg)
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            unbindCamera()
+                            if (cont.isActive) cont.resume(null)
+                        }
+                    })
+                } catch (_: Exception) {
+                    unbindCamera()
                     if (cont.isActive) cont.resume(null)
                 }
             }

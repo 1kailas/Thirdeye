@@ -18,7 +18,7 @@ except ImportError:
 
 import app as server
 from sarvam_client import SarvamError
-from task_engine import Answer, TaskSession
+from task_engine import Answer, Locate, TaskSession
 from test_task_engine import snapshot, step, verdict, washer
 
 TEST_TOKEN = "test-phone-token-0123456789abcdef"
@@ -57,13 +57,13 @@ class PhoneTests(unittest.TestCase):
         self.addCleanup(self.stack.close)
         self.rt = server.app.state.runtime
         server.phone_debug_records.clear()
-        for name in ("guide", "verify", "transcribe", "speak", "answer"):
+        for name in ("guide", "verify", "transcribe", "speak", "answer", "locate"):
             setattr(self, name, self.stack.enter_context(patch.object(self.rt.ai, name)))
         self.speak.side_effect = lambda text: (CLIP, 1.0, False)
         self.guide.side_effect = lambda *args: (washer(message_ml="ഫോട്ടോ ലഭിച്ചു."), 1.0)
         self.verify.side_effect = lambda *args: (verdict(), 1.0)
         self.transcribe.side_effect = lambda audio, content_type: ("ചെയ്തു", 1.0)
-        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, answer_ml="ok"), 1.0)
+        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, wants_location=False, answer_ml="ok"), 1.0)
 
     def tearDown(self):
         for record in list(server.phone_debug_records):
@@ -88,6 +88,83 @@ class PhoneTests(unittest.TestCase):
         self.rt.session = session
         self.assertIsNotNone(session.step)
         return before
+
+    def test_location_question_uses_locate_route_and_remembers_target(self):
+        grid = Locate(device_name="remote", rows=[["POWER", "MUTE"], ["EXIT", "OK"]], target_label="EXIT",
+                      target_row=2, target_col=1, finger_visible=False, finger_row=None, finger_col=None,
+                      upright=True, readable=True, needs_new_image=False, message_ml="x")
+        self.answer.side_effect = lambda *args: (Answer(
+            is_device_task=False, wants_location=True, answer_ml="ശരി"), 1.0)
+        self.locate.side_effect = lambda *args: (grid, 1.0)
+        self.transcribe.side_effect = lambda audio, content_type: ("Where is the exit button?", 1.0)
+        audio = {"audio_b64": b64(b"RIFF" + bytes(60)), "audio_type": "audio/wav"}
+        data = self.ask(photo_payload(**audio)).json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["debug"]["route"], "locate")
+        self.assertIn("'EXIT'", data["reply"])
+        self.assertIn("മുകളിൽ നിന്ന് രണ്ടാമത്തെ വരിയിൽ", data["reply"])
+        self.guide.assert_not_called()
+        self.assertEqual(self.locate.call_args.args[2], None)
+        self.assertEqual(self.rt.locate_target, "EXIT")
+        self.ask(photo_payload(**audio))
+        self.assertEqual(self.locate.call_args.args[2], "EXIT")
+        record = server.phone_debug_records[-1]
+        self.assertEqual(record["meta"]["locate"]["rows"], [["POWER", "MUTE"], ["EXIT", "OK"]])
+
+    def test_stream_returns_ordered_ndjson_matching_reply(self):
+        reply = "ഇത് ആദ്യത്തെ വാചകം ആണ്. ഇത് രണ്ടാമത്തെ വാചകം ആണ്. ഇത് മൂന്നാമത്തെ വാചകം ആണ്. ഇത് നാലാമത്തെ വാചകം ആണ്."
+        self.answer.side_effect = lambda *args: (Answer(
+            is_device_task=False, wants_location=False, answer_ml=reply), 1.0)
+        self.speak.side_effect = lambda text: (b"ID3" + text.encode(), 1.0, False)
+        response = self.ask(photo_payload(stream=True))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("application/x-ndjson"))
+        lines = [json.loads(line) for line in response.text.splitlines()]
+        self.assertEqual([line["type"] for line in lines][0], "meta")
+        self.assertEqual(lines[-1]["type"], "done")
+        meta = lines[0]
+        self.assertEqual(meta["reply"], reply)
+        audio = [line for line in lines if line["type"] == "audio"]
+        self.assertEqual([line["index"] for line in audio], list(range(meta["parts"])))
+        self.assertLessEqual(meta["parts"], 3)
+        spoken = " ".join(base64.b64decode(line["audio_b64"])[3:].decode() for line in audio)
+        self.assertEqual(spoken, reply)
+        self.assertIsNotNone(lines[-1]["debug"]["ttfa_ms"])
+        record = server.phone_debug_records[-1]
+        self.assertEqual(record["meta"]["parts"], meta["parts"])
+        self.assertTrue((record["dir"] / "meta.json").exists())
+
+    def test_stream_failed_part_is_null_and_stream_continues(self):
+        reply = "ഇത് ആദ്യത്തെ വാചകം ആണ്. ഇത് രണ്ടാമത്തെ വാചകം ആണ്."
+        self.answer.side_effect = lambda *args: (Answer(
+            is_device_task=False, wants_location=False, answer_ml=reply), 1.0)
+
+        def speak(text):
+            if "ആദ്യത്തെ" in text:
+                raise SarvamError("tts down")
+            return b"ID3ok", 1.0, False
+        self.speak.side_effect = speak
+        lines = [json.loads(line) for line in self.ask(photo_payload(stream=True)).text.splitlines()]
+        audio = [line for line in lines if line["type"] == "audio"]
+        self.assertIsNone(audio[0]["audio_b64"])
+        self.assertIsNotNone(audio[1]["audio_b64"])
+        self.assertEqual(lines[-1]["type"], "done")
+
+    def test_stream_errors_before_reply_stay_plain_json(self):
+        self.assertEqual(self.ask(photo_payload(stream=True), token="wrong").status_code, 401)
+        bad = self.ask({"image_b64": "!!!", "stream": True})
+        self.assertEqual(bad.status_code, 400)
+        self.assertFalse(bad.json()["ok"])
+        self.guide.side_effect = SarvamError("down")
+        self.answer.side_effect = SarvamError("down")
+        failed = self.ask(photo_payload(stream=True))
+        self.assertEqual(failed.status_code, 503)
+        self.assertFalse(failed.json()["ok"])
+
+    def test_non_stream_response_shape_is_unchanged(self):
+        data = self.ask(photo_payload()).json()
+        self.assertEqual(set(data), {"ok", "reply", "transcript", "audio_b64", "audio_type", "debug"})
+
 
     def test_unauthorized_requests_get_401(self):
         for response in (self.ask(photo_payload(), token=None), self.ask(photo_payload(), token="wrong"),
@@ -201,7 +278,7 @@ class PhoneTests(unittest.TestCase):
 
     def test_general_route_photo_only_skips_guide(self):
         self.answer.side_effect = lambda *args: (
-            Answer(is_device_task=False, answer_ml="നിങ്ങളുടെ മുന്നിൽ ഒരു tv cabinet ഉണ്ട്."), 1.0)
+            Answer(is_device_task=False, wants_location=False, answer_ml="നിങ്ങളുടെ മുന്നിൽ ഒരു tv cabinet ഉണ്ട്."), 1.0)
         response = self.ask(photo_payload())
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -232,7 +309,7 @@ class PhoneTests(unittest.TestCase):
             return ("what is in front of me", 1.0)
         self.transcribe.side_effect = transcribe
         self.answer.side_effect = lambda *args: (
-            Answer(is_device_task=False, answer_ml="മുന്നിൽ ഒരു comment."), 1.0)
+            Answer(is_device_task=False, wants_location=False, answer_ml="മുന്നിൽ ഒരു comment."), 1.0)
         wav = b"RIFF" + b"\x00" * 40
         response = self.ask({"image_b64": b64(jpeg_bytes()), "audio_b64": b64(wav),
                              "audio_type": "audio/wav"})
@@ -250,7 +327,7 @@ class PhoneTests(unittest.TestCase):
         self.assertTrue((record["dir"] / "audio.wav").is_file())
 
     def test_device_task_falls_through_to_guide(self):
-        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, answer_ml="ok"), 1.0)
+        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, wants_location=False, answer_ml="ok"), 1.0)
         response = self.ask(photo_payload())
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -270,7 +347,7 @@ class PhoneTests(unittest.TestCase):
         self.begin_task()
         self.transcribe.side_effect = lambda a, c: ("what time is it", 1.0)
         self.answer.side_effect = lambda *args: (
-            Answer(is_device_task=False, answer_ml="മുന്നിൽ ഒരു cabinet ഉണ്ട്."), 1.0)
+            Answer(is_device_task=False, wants_location=False, answer_ml="മുന്നിൽ ഒരു cabinet ഉണ്ട്."), 1.0)
         response = self.ask({"image_b64": b64(jpeg_bytes()),
                              "audio_b64": b64(b"wav"), "audio_type": "audio/wav"})
         self.assertEqual(response.status_code, 200)
@@ -285,7 +362,7 @@ class PhoneTests(unittest.TestCase):
     def test_active_task_related_question_uses_guide(self):
         self.begin_task()
         self.transcribe.side_effect = lambda a, c: ("how do I continue", 1.0)
-        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, answer_ml="ok"), 1.0)
+        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, wants_location=False, answer_ml="ok"), 1.0)
         response = self.ask({"image_b64": b64(jpeg_bytes()),
                              "audio_b64": b64(b"wav"), "audio_type": "audio/wav"})
         data = response.json()

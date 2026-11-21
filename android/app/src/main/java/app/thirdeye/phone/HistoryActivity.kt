@@ -187,6 +187,8 @@ class HistoryActivity : AppCompatActivity() {
         chip("route=${turn.route ?: "-"}", 0xFF0B6E6E.toInt())
         chip("http ${turn.httpCode}", if (turn.ok) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
         chip("${turn.elapsedMs} ms", 0xFF455A64.toInt())
+        turn.firstSoundMs?.let { chip("first sound ${"%.1f".format(it / 1000.0)} s", 0xFF0B6E6E.toInt()) }
+        turn.netMs?.let { chip("net $it ms", 0xFF455A64.toInt()) }
         if (!turn.ok) chip("FAIL", 0xFFC62828.toInt())
         return row
     }

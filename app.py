@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 from camera import DEFAULT_URL, Camera, CameraError, Snapshot, jpeg_encode
 from sarvam_client import SarvamClient, SarvamError
 from settings import load_environment
-from task_engine import TaskSession, malayalam
+from task_engine import TaskSession, compose_location, malayalam
 
 ROOT = Path(__file__).resolve().parent
 load_environment()
@@ -109,6 +109,7 @@ class Runtime:
         self.session = TaskSession()
         self.revision = 0
         self.phone_seq = 0
+        self.locate_target = None
         self.phone_history = deque(maxlen=2)
         self.busy = False
         self.phase = None
@@ -123,6 +124,7 @@ class Runtime:
         if clear:
             self.session = TaskSession()
             self.metrics = {}
+            self.locate_target = None
 
     def check(self, revision):
         if self.revision != revision:
@@ -414,6 +416,66 @@ async def phone_clip(rt, text):
         return None
 
 
+def phone_parts(text):
+    spoken = phone_speech(text)
+    if spoken is None:
+        return []
+    pieces = [p.strip() for p in re.split(r"(?<=[।?!])\s+|(?<=\.)\s+|\n+", spoken) if p.strip()]
+    merged = []
+    for piece in pieces:
+        if merged and len(merged[-1]) < 15:
+            merged[-1] += " " + piece
+        else:
+            merged.append(piece)
+    if len(merged) > 1 and len(merged[-1]) < 15:
+        merged[-2] += " " + merged.pop()
+    if len(merged) <= 3:
+        return merged or [spoken]
+    first, rest = merged[0], merged[1:]
+    cut = min(range(1, len(rest)), key=lambda i: abs(len(" ".join(rest[:i])) - len(" ".join(rest[i:]))))
+    return [first, " ".join(rest[:cut]), " ".join(rest[cut:])]
+
+
+async def phone_part_clip(rt, text, gate):
+    async with gate:
+        try:
+            clip, _, _ = await asyncio.to_thread(rt.ai.speak, text)
+            return base64.b64encode(clip).decode("ascii")
+        except Exception:
+            return None
+
+
+def ndjson(obj):
+    return (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+async def phone_stream(rt, message, transcript, debug, started):
+    parts = phone_parts(message)
+    gate = asyncio.Semaphore(3)
+    tasks = [asyncio.create_task(phone_part_clip(rt, part, gate)) for part in parts]
+    if debug is not None:
+        debug["meta"].update(parts=len(parts))
+    yield ndjson({"type": "meta", "ok": True, "reply": message, "transcript": transcript,
+                  "audio_type": "audio/mpeg", "parts": len(parts), "debug": phone_debug_public(debug)})
+    ttfa = None
+    try:
+        for index, task in enumerate(tasks):
+            clip = await task
+            if ttfa is None and clip:
+                ttfa = round((perf_counter() - started) * 1000, 1)
+            yield ndjson({"type": "audio", "index": index, "audio_b64": clip})
+        timings = {**(debug["meta"]["timings_ms"] if debug is not None else {}), "ttfa": ttfa}
+        yield ndjson({"type": "done", "debug": {**phone_debug_public(debug), "timings_ms": timings,
+                                                "ttfa_ms": ttfa}})
+    finally:
+        for task in tasks:
+            task.cancel()
+        if debug is not None:
+            debug["meta"]["timings_ms"] = {**debug["meta"]["timings_ms"], "ttfa": ttfa,
+                                           "total_stream": round((perf_counter() - started) * 1000, 1)}
+            phone_debug_finish(debug)
+
+
 PHONE_DEBUG_LIMIT = 30
 PHONE_DEBUG_ID = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}")
 PHONE_AUDIO_EXT = {"audio/wav": "wav", "audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg"}
@@ -427,7 +489,7 @@ def phone_debug_enabled():
 def phone_debug_timings(rt, record):
     metrics = rt.metrics or {}
     return {"stt": metrics.get("stt_ms"), "vision": metrics.get("vision_ms"),
-            "tts": metrics.get("tts_ms"),
+            "tts": metrics.get("tts_ms"), "locate": metrics.get("locate_ms"),
             "total": round((perf_counter() - record["started"]) * 1000, 1)}
 
 
@@ -515,6 +577,7 @@ async def phone_ping(request: Request):
 @app.post("/api/phone/ask")
 async def phone_ask(request: Request):
     rt = request.app.state.runtime
+    started = perf_counter()
     if not phone_allowed(request):
         return JSONResponse(PHONE_UNAUTHORIZED, status_code=401)
     body = bytearray()
@@ -550,6 +613,7 @@ async def phone_ask(request: Request):
             image.load()
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
         return await phone_fail(rt, 400, "ശരിയായ ഫോട്ടോ ലഭിച്ചില്ല. വീണ്ടും എടുക്കുക.")
+    stream = payload.get("stream") is True
     audio = None
     if audio_b64 is not None:
         if not isinstance(audio_type, str) or audio_type not in PHONE_AUDIO_TYPES:
@@ -599,20 +663,30 @@ async def phone_ask(request: Request):
                 rt.ai.answer, shot.jpeg, text, list(rt.phone_history), task_ctx)
             rt.check(revision)
             rt.metrics["vision_ms"] = ms
-            if result.is_device_task:
+            if result.wants_location:
+                rt.phase = "LOCATING"
+                located, ms = await asyncio.to_thread(rt.ai.locate, shot.jpeg, text, rt.locate_target)
+                rt.check(revision)
+                rt.metrics["locate_ms"] = ms
+                route = "locate"
+                message = compose_location(located)
+                rt.locate_target = located.target_label or rt.locate_target
+                if debug is not None:
+                    debug["meta"]["locate"] = located.model_dump()
+            elif result.is_device_task:
                 route = "guide"
                 message = await rt.run(action, text, Crop(), revision, shot)
             else:
                 route = "general"
                 message = result.answer_ml
             rt.session.respond(message)
-            if route == "general":
+            if route in ("general", "locate"):
                 rt.phone_history.append({"question": text[:220], "answer": message[:280]})
         else:
             route = "guide"
             message = await rt.run(action, text, Crop(), revision, shot)
             rt.session.respond(message)
-        clip = await phone_clip(rt, message)
+        clip = None if stream else await phone_clip(rt, message)
     except (CameraError, SarvamError) as exc:
         if debug is not None:
             debug["meta"].update(route=route or "error")
@@ -626,7 +700,11 @@ async def phone_ask(request: Request):
     if debug is not None:
         debug["meta"].update(ok=True, http_status=200, route=route, reply=message, error=None,
                              timings_ms=phone_debug_timings(rt, debug))
-        phone_debug_finish(debug)
+        if not stream:
+            phone_debug_finish(debug)
+    if stream:
+        return StreamingResponse(phone_stream(rt, message, transcript, debug, started),
+                                 media_type="application/x-ndjson")
     return JSONResponse({"ok": True, "reply": message, "transcript": transcript,
                          "audio_b64": clip, "audio_type": "audio/mpeg",
                          "debug": phone_debug_public(debug)})
@@ -637,10 +715,12 @@ DEBUG_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>DrishtiG
 .card{background:#1e242b;border-radius:10px;padding:12px;margin:12px 0}
 img{max-width:220px;border-radius:6px;cursor:zoom-in}
 .meta{font-size:13px;line-height:1.5}.reply{color:#9fd3a8}.err{color:#e08f8f}
-audio{width:100%;margin-top:6px}a{color:#8ab4f8}</style></head>
+audio{width:100%;margin-top:6px}a{color:#8ab4f8}
+.grid{border-collapse:collapse;margin-top:8px}.grid td{border:1px solid #445;padding:4px 10px;text-align:center}.tgt{background:#2e7d32}.fng{outline:2px solid #f2b544}</style></head>
 <body><h2>Phone requests</h2><div id="list">loading…</div>
 <script>
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const grid=l=>l&&l.rows?`<table class="grid">${l.rows.map((row,r)=>`<tr>${row.map((k,c)=>`<td class="${r+1==l.target_row&&c+1==l.target_col?'tgt':''} ${l.finger_visible&&r+1==l.finger_row&&c+1==l.finger_col?'fng':''}">${esc(k)||'·'}</td>`).join('')}</tr>`).join('')}</table>`:'';
 async function load(){
   const items=await (await fetch('/api/debug/items')).json();
   document.getElementById('list').innerHTML=items.map(m=>{
@@ -651,8 +731,9 @@ async function load(){
     transcript: ${esc(m.transcript)}<br>
     reply: <span class="reply">${esc(m.reply)}</span>
     ${m.error?`<br><span class="err">${esc(m.error)}</span>`:''}
-    <br>timings: stt=${t.stt??'-'} vision=${t.vision??'-'} tts=${t.tts??'-'} total=${t.total??'-'} ms
+    <br>timings: stt=${t.stt??'-'} vision=${t.vision??'-'} tts=${t.tts??'-'} locate=${t.locate??'-'} ttfa=${t.ttfa??'-'} total=${t.total??'-'} ms
     · image ${m.image_bytes}B ${esc(m.image_size)}${m.audio_bytes?` · audio ${m.audio_bytes}B${m.audio_seconds!=null?` (${m.audio_seconds}s)`:''}`:''}</div>
+    ${grid(m.locate)}
     ${m.audio_file?`<audio controls src="/api/debug/${m.id}/audio"></audio>`:''}</div>`;
   }).join('')||'no requests yet';
 }

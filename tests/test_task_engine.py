@@ -400,7 +400,7 @@ class SarvamTests(unittest.TestCase):
     def test_vision_system_prompt_requests_compact_json(self):
         marker = "single compact line"
         payloads = [verdict().model_dump_json(), washer().model_dump_json(),
-                    Answer(is_device_task=False, answer_ml="ok").model_dump_json()]
+                    Answer(is_device_task=False, wants_location=False, answer_ml="ok").model_dump_json()]
         replies = [cloud_reply({"choices": [{"message": {"content": p}}]}) for p in payloads]
         with patch.object(self.ai.task_http, "post", side_effect=replies) as post:
             self.ai.verify(panel_jpeg(False), panel_jpeg(True), {"expected_result": "x"})
