@@ -70,6 +70,19 @@ class ThirdEyeService : LifecycleService() {
     private var waitTicker: Runnable? = null
     private var watchdogTicker: Runnable? = null
 
+    @Volatile var uiState: UiState = UiState.READY
+        private set
+    private val uiListeners = java.util.concurrent.CopyOnWriteArrayList<(UiState) -> Unit>()
+
+    fun addStateListener(listener: (UiState) -> Unit) { uiListeners.add(listener) }
+    fun removeStateListener(listener: (UiState) -> Unit) { uiListeners.remove(listener) }
+
+    private fun setUiState(state: UiState) {
+        if (uiState == state) return
+        uiState = state
+        uiListeners.forEach { it(state) }
+    }
+
     private var photoJob: Deferred<ByteArray?>? = null
     private var capture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -169,6 +182,7 @@ class ThirdEyeService : LifecycleService() {
         mainHandler.post {
             val actions = sm?.onEvent(event).orEmpty()
             actions.forEach(::executeAction)
+            if (event == TriggerStateMachine.KeyEvent.PlaybackFinished) setUiState(UiState.READY)
         }
     }
 
@@ -176,6 +190,7 @@ class ThirdEyeService : LifecycleService() {
         when (action) {
             TriggerStateMachine.SmAction.TakePhotoThenSend -> requestJob {
                 if (recording) stopRecordingInternal()
+                setUiState(UiState.LOOKING)
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
                 if (jpeg == null) {
@@ -186,11 +201,13 @@ class ThirdEyeService : LifecycleService() {
                 }
             }
             TriggerStateMachine.SmAction.StartHold -> {
+                setUiState(UiState.LISTENING)
                 vibrateHold()
                 startRecording()
                 photoJob = scope.async { capturePhoto() }
             }
             TriggerStateMachine.SmAction.FinishHold -> requestJob {
+                setUiState(UiState.LOOKING)
                 val wav = stopRecording()
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
@@ -203,6 +220,7 @@ class ThirdEyeService : LifecycleService() {
             TriggerStateMachine.SmAction.RejectBusy -> errorTone()
             TriggerStateMachine.SmAction.InterruptPlayback -> releasePlayer()
             TriggerStateMachine.SmAction.CancelAll -> {
+                setUiState(UiState.READY)
                 stopRecordingInternal()
                 stopWaitTicker()
                 stopWatchdog()
@@ -270,6 +288,7 @@ class ThirdEyeService : LifecycleService() {
 
     private fun settleWithError(message: String) {
         stopWaitTicker()
+        setUiState(UiState.PROBLEM)
         lastStatus = message
         onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
         errorTone()
@@ -335,6 +354,7 @@ class ThirdEyeService : LifecycleService() {
 
     private fun playReply(audioB64: String?, reply: String) {
         stopWaitTicker()
+        setUiState(UiState.SPEAKING)
         if (audioB64 != null) {
             val clip = runCatching {
                 Base64.decode(audioB64, Base64.DEFAULT)

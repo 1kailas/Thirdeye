@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ThirdEye" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="colorPrimary">#1B5E20</item>
-        <item name="colorPrimaryDark">#0D3B12</item>
-        <item name="colorAccent">#2E7D32</item>
+    <style name="Theme.ThirdEye" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#BFE9E7</item>
+        <item name="colorOnPrimaryContainer">#00201F</item>
+        <item name="colorSecondary">@color/brand_accent</item>
+        <item name="colorOnSecondary">#3A2A00</item>
+        <item name="colorTertiary">@color/brand_accent</item>
+        <item name="colorSurface">@color/surface_light</item>
+        <item name="colorOnSurface">@color/on_surface_light</item>
+        <item name="colorSurfaceVariant">#E4E9EA</item>
+        <item name="colorOnSurfaceVariant">#41484A</item>
+        <item name="colorError">@color/error_light</item>
+        <item name="android:statusBarColor">@color/surface_light</item>
+        <item name="android:navigationBarColor">@color/surface_light</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

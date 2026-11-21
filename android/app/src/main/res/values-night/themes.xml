@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ThirdEye" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_primary_dark</item>
+        <item name="colorOnPrimary">#00201F</item>
+        <item name="colorPrimaryContainer">#0B3A38</item>
+        <item name="colorOnPrimaryContainer">#BFE9E7</item>
+        <item name="colorSecondary">@color/brand_accent</item>
+        <item name="colorOnSecondary">#3A2A00</item>
+        <item name="colorTertiary">@color/brand_accent</item>
+        <item name="colorSurface">@color/surface_dark</item>
+        <item name="colorOnSurface">@color/on_surface_dark</item>
+        <item name="colorSurfaceVariant">#2A3237</item>
+        <item name="colorOnSurfaceVariant">#C3CACE</item>
+        <item name="colorError">@color/error_dark</item>
+        <item name="android:statusBarColor">@color/surface_dark</item>
+        <item name="android:navigationBarColor">@color/surface_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -52,3 +52,7 @@ The server address is the PC's Tailscale (`100.x.y.z`) or LAN IP plus `PORT` fro
 
 - Android does not expose power-button hold/release to apps, so Volume Up is the trigger and it is consumed while the service runs (media volume keys pause).
 - Whether key events reach the accessibility service with the screen off varies by device/OEM; disable battery optimization and keep the phone awake if presses are missed.
+
+## Accessibility
+
+The UI follows Material 3 with 20dp rounded cards, 56dp+ touch targets, ≥16sp body text, section headings marked for TalkBack, a polite live region on the hero status, and dark-mode support. Every interactive element has a content description; decorative icons are hidden from accessibility. Status is never colour-only — each state pairs an icon with text.

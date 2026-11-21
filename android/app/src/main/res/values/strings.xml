@@ -1,12 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DrishtiGuide</string>
+    <string name="subtitle">Thirdeye · hands-free visual assistant</string>
     <string name="accessibility_description">Lets DrishtiGuide detect Volume Up presses (quick press or press and hold) so you can take a photo and ask a question without touching the screen. It does not read your screen.</string>
     <string name="notification_channel">thirdeye_trigger</string>
     <string name="notification_channel_name">DrishtiGuide trigger</string>
     <string name="notification_title">DrishtiGuide is listening</string>
     <string name="notification_text">Press and hold Volume Up to ask with voice, or tap for a photo.</string>
     <string name="notification_stop">Stop</string>
+
+    <!-- Hero states -->
+    <string name="state_setup">Setup needed</string>
+    <string name="state_setup_explain">Finish the checklist below to start using the volume key.</string>
+    <string name="state_ready">Ready</string>
+    <string name="state_ready_explain">Press Volume Up to look, hold to ask.</string>
+    <string name="state_listening">Listening…</string>
+    <string name="state_listening_explain">Keep holding Volume Up and speak your question.</string>
+    <string name="state_looking">Looking…</string>
+    <string name="state_looking_explain">Taking the photo and asking the computer.</string>
+    <string name="state_speaking">Speaking…</string>
+    <string name="state_speaking_explain">Playing the answer. Press Volume Up to interrupt.</string>
+    <string name="state_problem">Problem</string>
+    <string name="state_problem_explain">Something went wrong. See the message below.</string>
+
+    <!-- Setup checklist -->
+    <string name="setup_title">Setup</string>
+    <string name="row_permissions">Permissions</string>
+    <string name="row_key_service">Key service</string>
+    <string name="row_computer_link">Computer link</string>
+    <string name="row_service">Service</string>
+    <string name="status_missing">Not done yet</string>
+    <string name="status_done">Done</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_running">Running</string>
+    <string name="action_grant">Grant</string>
+    <string name="action_enable">Enable</string>
+    <string name="action_allow_restricted">Greyed out? Allow restricted settings</string>
+    <string name="action_pair">Pair</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_start">Start</string>
+    <string name="action_stop">Stop</string>
+
+    <!-- Connection card -->
+    <string name="conn_title">Computer connection</string>
+    <string name="server_url_hint">Server address</string>
+    <string name="server_url_helper">e.g. http://100.x.y.z:8000</string>
+    <string name="server_url_desc">Server address, for example http://100.64.0.1:8000</string>
+    <string name="token_hint">Access token</string>
+    <string name="token_desc">Access token from the pairing page</string>
+    <string name="action_paste_pairing">Paste pairing link</string>
+    <string name="action_test">Test connection</string>
+    <string name="conn_connected">Connected · AI ready</string>
+    <string name="conn_ai_not_ready">Connected · AI key missing on computer</string>
+    <string name="conn_unreachable">Unreachable</string>
+    <string name="conn_token_rejected">Token rejected</string>
+    <string name="conn_testing">Testing…</string>
+
+    <!-- How to use -->
+    <string name="howto_title">How to use</string>
+    <string name="howto_quick">Quick press · Volume Up — take a photo and hear what is in front of you</string>
+    <string name="howto_hold">Press and hold — ask a question while holding, release to hear the answer</string>
+    <string name="howto_commands">Say: stop · repeat · done · next</string>
+    <string name="tryit_caption">Tap to look · Hold to ask</string>
+
+    <!-- Last answer -->
+    <string name="last_answer_title">Last answer</string>
+    <string name="last_answer_empty">Nothing yet — try a quick press</string>
+    <string name="you_prefix">You: </string>
+    <string name="action_replay">Replay</string>
+    <string name="action_history">Open debug history</string>
+
+    <!-- Errors / TTS -->
     <string name="err_no_photo">Photo capture failed. Try again.</string>
     <string name="err_network">Server unreachable. Check the address and that the PC app is running.</string>
     <string name="err_no_photo_ml">ഫോട്ടോ എടുക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.</string>
