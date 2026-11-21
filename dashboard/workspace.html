@@ -3,182 +3,101 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#f4f3fa" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#191723" media="(prefers-color-scheme: dark)">
-<title>Camera workspace · DrishtiGuide</title>
-<style>
-:root{color-scheme:light dark;--bg:#f4f3fa;--card:#fff;--ink:#242133;--muted:#555266;--line:#d6d2df;--control:#706880;--accent:#523a88;--accent-hover:#392565;--accent-ink:#fff;--soft:#ece7fa;--alert:#fff2eb;--error:#842920;--focus:#835312}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.65 system-ui,"Noto Sans Malayalam",sans-serif}
-button,textarea,input,select{font:inherit;color:inherit}
-button,input,textarea,select,summary{touch-action:manipulation}
-button,select,.url,textarea{border:1px solid var(--control);border-radius:.7rem;background:var(--card)}
-button{min-height:48px;padding:.55rem .9rem;font-weight:650;cursor:pointer}
-button:not([aria-disabled="true"]):hover{background:var(--soft)}
-button[aria-disabled="true"]{border-style:dashed;background:var(--card);color:var(--muted);cursor:default}
-:where(a){color:var(--accent);text-underline-offset:.2em}
-:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
-h1,h2,h3,p{margin:0}
-h2{font-size:1.12rem}h3{font-size:1rem}
-small,.muted{color:var(--muted)}
-.skip{position:absolute;inset-inline-start:1rem;top:-10rem;padding:.6rem 1rem;background:var(--card);z-index:2}.skip:focus{top:.5rem}
-header,.shell{max-width:76rem;margin:auto;padding-inline:clamp(.85rem,3vw,2rem)}
-header{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;padding-block:1.65rem 1.15rem}
-h1{font-size:clamp(1.65rem,4vw,2.4rem);letter-spacing:-.045em;line-height:1.15}
-h1 span{color:var(--accent)}
-.tagline{color:var(--muted);font-size:.95rem;margin-top:.25rem}
-.badge{display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);background:var(--card);border-radius:2rem;padding:.3rem .8rem;font-size:.88rem;font-weight:600}
-.dot{display:inline-block;width:.62rem;height:.62rem;border-radius:50%;background:#93641d}
-.badge[data-state="ready"] .dot{background:#634599}
-.badge[data-state="reconnecting"] .dot{background:#a63226}
-.shell{padding-bottom:1.5rem}
-.alert{background:var(--alert);color:var(--error);border:1px solid var(--error);border-radius:.75rem;padding:.7rem 1rem;margin-bottom:.8rem}
-.work{display:grid;grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);align-items:start;gap:1.05rem}
-.card{border:1px solid var(--line);border-radius:1.05rem;background:var(--card);box-shadow:0 .18rem .55rem #142c2012}
-.inner{padding:clamp(.85rem,2.2vw,1.35rem)}
-.row{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
-.between{justify-content:space-between}
-.cam-toolbar{padding:.75rem 1rem}
-.viewport{background:#292436;position:relative;display:grid;place-items:center;min-height:14rem;overflow:hidden}
-.waiting{color:#eeeaff;text-align:center;padding:1.5rem;max-width:32rem}
-.waiting strong{display:block;font-size:1.05rem}.waiting small{color:#d8d1eb}
-.image-area{position:relative;width:100%;max-height:60vh;aspect-ratio:var(--aspect,1.5);display:grid;place-items:center}
-.image-bounds{position:relative;height:100%;max-width:100%;aspect-ratio:var(--aspect,1.5)}
-.image-bounds img{display:block;position:absolute;width:100%;height:100%;object-fit:contain}
-#cropBox{position:absolute;border:2px solid #fbe783;box-shadow:0 0 0 900px #13291f55;pointer-events:none}
-.primary,.primary:not([aria-disabled="true"]):hover{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.primary:not([aria-disabled="true"]):hover{background:var(--accent-hover)}
-.quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
-.quick-actions button{min-height:3.55rem;font-size:1.02rem}
-details{margin-top:.8rem;border-top:1px solid var(--line);padding-top:.6rem}
-summary{cursor:pointer;font-weight:650;min-height:44px;align-content:center}
-.settings{display:grid;gap:.6rem;margin-top:.5rem}
-.url,textarea{width:100%;display:block;padding:.55rem .75rem}
-select{min-height:44px;padding:.25rem .45rem}
-textarea{resize:vertical;min-height:3.25rem}
-input[type=range]{width:100%;accent-color:var(--accent);margin:.2rem 0}
-.sliders{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
-.guide-head{margin-bottom:.75rem}
-#activity{color:var(--accent);font-size:.9rem;font-weight:650}
-.instruction{background:var(--soft);border:1px solid var(--line);border-inline-start:.25rem solid var(--accent);border-radius:.85rem;padding:clamp(.85rem,2vw,1.2rem);overflow-wrap:anywhere}
-#instruction{font-size:clamp(1.18rem,2.25vw,1.55rem);font-weight:650;line-height:1.55}
-#response{margin-top:.5rem}
-#stepLabel,#verification{font-size:.87rem;font-weight:650;color:var(--accent)}
-#location,#task{margin-top:.35rem}.block{margin-top:1rem}
-#voice[data-recording="true"]{background:var(--alert);border-color:var(--error);color:var(--error)}
-.audio-options{border-bottom:1px solid var(--line);padding-bottom:.85rem;margin-bottom:.85rem}
-.audio-options label{display:inline-flex;align-items:center;gap:.45rem;min-height:44px}
-.audio-options input{width:1.15rem;height:1.15rem;accent-color:var(--accent)}
-.audio-status{font-size:.88rem;color:var(--muted);margin-top:.3rem}
-.audio-status[data-error="true"]{color:var(--error)}
-#questionForm{display:grid;gap:.45rem}
-#questionForm button{justify-self:start}
-#metrics{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.15rem .8rem;margin:.25rem 0;font-size:.89rem}
-#metrics dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}
-#controls{padding-inline-start:1.4rem}
-#controls li{overflow-wrap:anywhere}
-.key-list{font-size:.9rem}
-kbd{font:inherit;font-weight:650}
-[hidden]{display:none!important}
-@media(max-width:50rem){.work{grid-template-columns:1fr}}
-@media(max-width:28rem){.quick-actions{grid-template-columns:1fr}}
-@media(prefers-color-scheme:dark){
-  :root{--bg:#191723;--card:#252234;--ink:#faf8ff;--muted:#d3cde1;--line:#5e576a;--control:#b9adc9;--accent:#ccbcfa;--accent-hover:#e4d9ff;--accent-ink:#252133;--soft:#38304a;--alert:#3b2321;--error:#ffc1b7;--focus:#ffdb8a}
-}
-@media(prefers-contrast:more){
-  :root{--line:var(--ink);--control:var(--ink)}
-  :focus-visible{outline-width:4px}
-}
-</style>
+<meta name="theme-color" content="#272239">
+<title lang="en">Camera workspace · DrishtiGuide</title>
+<link rel="stylesheet" href="/dashboard-assets/theme.css">
+<link rel="stylesheet" href="/dashboard-assets/workspace.css">
 </head>
 <body>
 <a class="skip" href="#guide">സഹായിയിലേക്ക് പോകുക</a>
 <a class="skip" href="#cameraPanel">ക്യാമറയിലേക്ക് പോകുക</a>
-<header>
-  <a href="/" lang="en">Back to phone activity</a>
-  <div>
-    <h1 lang="en">DrishtiGuide <span>AI</span></h1>
-    <p class="tagline">വീട്ടുപകരണങ്ങൾ ഉപയോഗിക്കാൻ മലയാളത്തിൽ സഹായം</p>
-  </div>
-  <div id="cameraBadge" data-state="connecting" class="badge" role="status"><span class="dot" aria-hidden="true"></span><span id="cameraState">ക്യാമറ ബന്ധിപ്പിക്കുന്നു</span></div>
-</header>
-
-<main class="shell">
-  <p id="configAlert" class="alert" hidden role="status">Sarvam ഉപയോഗിക്കാൻ <code>.env</code> ൽ <code>SARVAM_API_KEY</code> നൽകി ആപ്പ് വീണ്ടും തുടങ്ങുക.</p>
-  <p id="error" class="alert" hidden role="alert"></p>
+<!-- workspace-navigation -->
+<main class="camera-workspace">
+  <header class="mast">
+    <span lang="en">DrishtiGuide / Dashboard</span>
+    <span id="cameraBadge" data-state="connecting" class="connection" role="status"><span id="cameraState">ക്യാമറ ബന്ധിപ്പിക്കുന്നു</span></span>
+  </header>
+  <div class="title-row"><div>
+    <h1 lang="en">Camera workspace</h1>
+    <p>വീട്ടുപകരണങ്ങൾ ഉപയോഗിക്കാൻ മലയാളത്തിൽ സഹായം</p>
+  </div></div>
+  <p id="configAlert" class="notice" hidden role="status">Sarvam ഉപയോഗിക്കാൻ <code>.env</code> ൽ <code>SARVAM_API_KEY</code> നൽകി ആപ്പ് വീണ്ടും തുടങ്ങുക.</p>
+  <p id="error" class="notice" hidden role="alert"></p>
   <div class="work">
-    <section class="card inner" id="guide" tabindex="-1" aria-labelledby="guideHeading">
-      <div class="row between guide-head">
+    <section class="panel" id="guide" tabindex="-1" aria-labelledby="guideHeading">
+      <div class="bar">
         <h2 id="guideHeading">ദൗത്യസഹായി</h2>
-        <span id="activity" role="status">തയ്യാർ</span>
+        <span id="activity" class="badge" role="status">തയ്യാർ</span>
       </div>
-      <div class="audio-options">
-        <div class="row" role="group" aria-label="സഹായിയുടെ ശബ്ദം">
-          <button id="intro" type="button">തുടങ്ങാൻ സഹായം കേൾക്കുക</button>
-          <button id="replay" type="button" aria-keyshortcuts="R">വീണ്ടും കേൾക്കുക</button>
-          <button id="stop" type="button" aria-keyshortcuts="Escape">നിർത്തുക</button>
+      <div class="inner">
+        <div class="audio-options">
+          <div class="row" role="group" aria-label="സഹായിയുടെ ശബ്ദം">
+            <button class="button" id="intro" type="button">തുടങ്ങാൻ സഹായം കേൾക്കുക</button>
+            <button class="button" id="replay" type="button" aria-keyshortcuts="R">വീണ്ടും കേൾക്കുക</button>
+            <button class="button" id="stop" type="button" aria-keyshortcuts="Escape">നിർത്തുക</button>
+          </div>
+          <div class="row">
+            <label><input id="autoSpeak" type="checkbox" checked> മറുപടികൾ സ്വയം വായിക്കുക</label>
+            <label for="speechRate">ശബ്ദവേഗം</label>
+            <select id="speechRate">
+              <option value="0.8">പതുക്കെ</option>
+              <option value="1" selected>സാധാരണ</option>
+              <option value="1.2">വേഗത്തിൽ</option>
+            </select>
+          </div>
+          <p id="audioStatus" class="audio-status" role="status" hidden></p>
         </div>
-        <div class="row">
-          <label><input id="autoSpeak" type="checkbox" checked> മറുപടികൾ സ്വയം വായിക്കുക</label>
-          <label for="speechRate">ശബ്ദവേഗം</label>
-          <select id="speechRate">
-            <option value="0.8">പതുക്കെ</option>
-            <option value="1" selected>സാധാരണ</option>
-            <option value="1.2">വേഗത്തിൽ</option>
-          </select>
+        <div class="quick-actions" role="group" aria-label="ചിത്രവും ചോദ്യവും">
+          <button class="button primary" id="capture" type="button" aria-keyshortcuts="C" aria-describedby="cameraState">ചിത്രമെടുത്ത് പരിശോധിക്കുക</button>
+          <button class="button" id="voice" type="button" aria-pressed="false" aria-keyshortcuts="V" aria-describedby="voiceHint">ചോദ്യം പറയുക</button>
         </div>
-        <p id="audioStatus" class="audio-status" role="status" hidden></p>
-      </div>
-      <div class="quick-actions" role="group" aria-label="ചിത്രവും ചോദ്യവും">
-        <button id="capture" type="button" class="primary" aria-keyshortcuts="C" aria-describedby="cameraState">ചിത്രമെടുത്ത് പരിശോധിക്കുക</button>
-        <button id="voice" type="button" aria-pressed="false" aria-keyshortcuts="V" aria-describedby="voiceHint">ചോദ്യം പറയുക</button>
-      </div>
-      <p id="voiceHint"><small>അമർത്തി സംസാരിക്കുക. വീണ്ടും അമർത്തുമ്പോൾ ചോദ്യം അയയ്ക്കും.</small></p>
-      <p id="transcript" class="muted" role="status" hidden></p>
-      <h3 id="device" hidden></h3>
-      <p id="task" class="muted" hidden></p>
-      <div class="instruction block" aria-live="polite" aria-atomic="true">
-        <p id="stepLabel" hidden></p>
-        <p id="instruction">ഉപകരണത്തിന്റെ നിയന്ത്രണ പാനലിലേക്ക് ക്യാമറ ചൂണ്ടി ഒരു ചിത്രമെടുക്കുക.</p>
-        <p id="location" hidden></p>
-        <p id="expectedResult" class="muted" hidden></p>
-        <p id="response" hidden></p>
-        <p id="uncertainty" class="muted" hidden></p>
-        <p id="verification" hidden></p>
-      </div>
-      <div class="row block" role="group" aria-label="ഇപ്പോഴത്തെ ഘട്ടം">
-        <button id="locate" type="button" aria-keyshortcuts="L">നിയന്ത്രണം എവിടെ?</button>
-        <button id="verify" type="button" aria-keyshortcuts="F" aria-describedby="cameraState verification">ചെയ്തു · പരിശോധിക്കുക</button>
-        <button id="next" type="button" aria-keyshortcuts="N">അടുത്തത്</button>
-        <button id="continue" type="button">സ്ഥിരീകരിക്കാതെ തുടരുക</button>
-      </div>
-      <details id="explanationOptions" hidden>
-        <summary>ഈ ഘട്ടം മറ്റൊരു രീതിയിൽ വിശദീകരിക്കുക</summary>
-        <div class="row">
-          <button id="simplify" type="button">ലളിതമായി പറയുക</button>
-          <button id="explain" type="button">കൂടുതൽ വിശദമായി പറയുക</button>
+        <p id="voiceHint"><small>അമർത്തി സംസാരിക്കുക. വീണ്ടും അമർത്തുമ്പോൾ ചോദ്യം അയയ്ക്കും.</small></p>
+        <p id="transcript" class="muted" role="status" hidden></p>
+        <h3 id="device" hidden></h3>
+        <p id="task" class="muted" hidden></p>
+        <div class="instruction block" aria-live="polite" aria-atomic="true">
+          <p id="stepLabel" hidden></p>
+          <p id="instruction">ഉപകരണത്തിന്റെ നിയന്ത്രണ പാനലിലേക്ക് ക്യാമറ ചൂണ്ടി ഒരു ചിത്രമെടുക്കുക.</p>
+          <p id="location" hidden></p>
+          <p id="expectedResult" class="muted" hidden></p>
+          <p id="response" hidden></p>
+          <p id="uncertainty" class="muted" hidden></p>
+          <p id="verification" hidden></p>
         </div>
-      </details>
-      <form id="questionForm" class="block">
-        <label for="question">ചോദ്യം അല്ലെങ്കിൽ ലക്ഷ്യം</label>
-        <textarea id="question" rows="2" maxlength="500" required></textarea>
-        <div class="row between">
-          <button id="ask" type="submit">ചോദിക്കുക</button>
-          <button id="reset" type="button">ദൗത്യം മായ്ക്കുക</button>
+        <div class="row block" role="group" aria-label="ഇപ്പോഴത്തെ ഘട്ടം">
+          <button class="button" id="locate" type="button" aria-keyshortcuts="L">നിയന്ത്രണം എവിടെ?</button>
+          <button class="button" id="verify" type="button" aria-keyshortcuts="F" aria-describedby="cameraState verification">ചെയ്തു · പരിശോധിക്കുക</button>
+          <button class="button" id="next" type="button" aria-keyshortcuts="N">അടുത്തത്</button>
+          <button class="button" id="continue" type="button">സ്ഥിരീകരിക്കാതെ തുടരുക</button>
         </div>
-      </form>
-      <details id="controlsDetails" hidden>
-        <summary>ചിത്രത്തിൽ കണ്ട നിയന്ത്രണങ്ങൾ</summary>
-        <ul id="controls"></ul>
-      </details>
+        <details id="explanationOptions" hidden>
+          <summary>ഈ ഘട്ടം മറ്റൊരു രീതിയിൽ വിശദീകരിക്കുക</summary>
+          <div class="row">
+            <button class="button" id="simplify" type="button">ലളിതമായി പറയുക</button>
+            <button class="button" id="explain" type="button">കൂടുതൽ വിശദമായി പറയുക</button>
+          </div>
+        </details>
+        <form id="questionForm" class="block">
+          <label for="question">ചോദ്യം അല്ലെങ്കിൽ ലക്ഷ്യം</label>
+          <textarea id="question" rows="2" maxlength="500" required></textarea>
+          <div class="row between">
+            <button class="button" id="ask" type="submit">ചോദിക്കുക</button>
+            <button class="button" id="reset" type="button">ദൗത്യം മായ്ക്കുക</button>
+          </div>
+        </form>
+        <details id="controlsDetails" hidden>
+          <summary>ചിത്രത്തിൽ കണ്ട നിയന്ത്രണങ്ങൾ</summary>
+          <ul id="controls"></ul>
+        </details>
+      </div>
     </section>
 
-    <section class="card" id="cameraPanel" tabindex="-1" aria-labelledby="previewHeading">
-      <div class="row between cam-toolbar">
+    <section class="panel" id="cameraPanel" tabindex="-1" aria-labelledby="previewHeading">
+      <div class="bar cam-toolbar">
         <h2 id="previewHeading">തത്സമയ ക്യാമറ</h2>
         <div class="row">
-          <button id="rotate" type="button">തിരിക്കുക</button>
-          <button id="refresh" type="button">വീണ്ടും ബന്ധിപ്പിക്കുക</button>
+          <button class="button" id="rotate" type="button">തിരിക്കുക</button>
+          <button class="button" id="refresh" type="button">വീണ്ടും ബന്ധിപ്പിക്കുക</button>
         </div>
       </div>
       <div class="viewport" id="viewport">
@@ -200,8 +119,8 @@ kbd{font:inherit;font-weight:650}
             <label for="cameraUrl">IP Webcam വിലാസം</label>
             <input id="cameraUrl" class="url" type="url" dir="ltr" spellcheck="false" inputmode="url" maxlength="600">
             <div class="row">
-              <button id="connect" type="button">ബന്ധിപ്പിക്കുക</button>
-              <button id="disconnect" type="button">ബന്ധം വിച്ഛേദിക്കുക</button>
+              <button class="button" id="connect" type="button">ബന്ധിപ്പിക്കുക</button>
+              <button class="button" id="disconnect" type="button">ബന്ധം വിച്ഛേദിക്കുക</button>
             </div>
             <label for="zoom">ചിത്രഭാഗം വലുതാക്കുക <output id="zoomValue" for="zoom">1×</output></label>
             <input id="zoom" type="range" min="1" max="4" step="0.25" value="1">

@@ -5,23 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#272239">
   <title>Phone activity · DrishtiGuide</title>
+  <link rel="stylesheet" href="/dashboard-assets/theme.css">
   <link rel="stylesheet" href="/dashboard-assets/monitor.css">
   <script src="/dashboard-assets/monitor.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to phone activity</a>
-<aside class="sidebar">
-  <a class="brand" href="/"><i class="eye" aria-hidden="true"></i>Thirdeye</a>
-  <nav aria-label="Workspace">
-    <a aria-current="page" href="/"><i aria-hidden="true">▤</i> Phone activity</a>
-    <a href="/workspace"><i aria-hidden="true">▣</i> Camera workspace</a>
-    <a href="/pair"><i aria-hidden="true">⊞</i> Pair a phone</a>
-  </nav>
-  <div class="local"><strong>DrishtiGuide</strong><span>Local workspace</span></div>
-</aside>
+<!-- workspace-navigation -->
 <main id="main" tabindex="-1">
   <header class="mast"><span>DrishtiGuide / Dashboard</span><span class="connection" id="connection" role="status">Connecting…</span></header>
-  <div class="title-row"><div><h1>Phone activity</h1><p>Inspect the photos, questions and Malayalam replies from your phone.</p></div><button id="refresh" type="button">Refresh</button></div>
+  <div class="title-row"><div><h1>Phone activity</h1><p>Inspect the photos, questions and Malayalam replies from your phone.</p></div><button class="button" id="refresh" type="button">Refresh</button></div>
   <div class="notice" id="notice" role="status" hidden></div>
   <dl class="stats">
     <div><dt>Saved requests</dt><dd id="count">—</dd></div>
@@ -29,7 +22,7 @@
     <div><dt>Vision service</dt><dd id="ai">—</dd></div>
   </dl>
   <div class="panes">
-    <section class="inspector" aria-labelledby="selected-title">
+    <section class="panel inspector" aria-labelledby="selected-title">
       <div class="bar"><h2 id="selected-title" tabindex="-1">Request detail</h2><span id="outcome" class="badge" hidden></span></div>
       <div id="empty" class="empty"><p id="empty-message">Loading phone requests…</p><a href="/pair" id="pair-empty" hidden>Pair a phone</a></div>
       <article id="detail" hidden>
@@ -39,7 +32,7 @@
           <p class="meta" id="when"></p>
           <section id="question-section" hidden><h3>Voice question</h3><p id="question" dir="auto"></p><audio id="recording" controls preload="none" aria-label="Original voice question" hidden></audio></section>
           <h3>Malayalam reply</h3><p id="reply" lang="ml" dir="auto"></p>
-          <button id="listen" type="button" hidden>Listen to reply</button>
+          <button class="button primary" id="listen" type="button" hidden>Listen to reply</button>
           <audio id="answer-audio" controls hidden aria-label="Malayalam reply"></audio>
           <p id="play-status" role="status"></p>
           <p class="notice" id="request-error" hidden></p>
@@ -49,8 +42,8 @@
         </div>
       </article>
     </section>
-    <section class="history" aria-labelledby="recent-title">
-      <div class="bar"><h2 id="recent-title">Recent requests</h2><button id="latest" type="button" hidden>Show latest</button></div>
+    <section class="panel history" aria-labelledby="recent-title">
+      <div class="bar"><h2 id="recent-title">Recent requests</h2><button class="button" id="latest" type="button" hidden>Show latest</button></div>
       <label class="search">Search history<input id="search" type="search" placeholder="Find a question or reply"></label>
       <ol id="history"></ol><p class="empty" id="history-empty">Waiting for history…</p>
     </section>

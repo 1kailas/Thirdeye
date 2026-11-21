@@ -17,6 +17,7 @@ import unicodedata
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
@@ -263,14 +264,22 @@ async def local_only(request: Request, call_next):
     return response
 
 
+@lru_cache(maxsize=3)
+def dashboard_template(page, active_path):
+    navigation = (ROOT / "dashboard/navigation.html").read_text(encoding="utf-8")
+    navigation = navigation.replace(f'<a href="{active_path}"',
+                                    f'<a aria-current="page" href="{active_path}"', 1)
+    return (ROOT / page).read_text(encoding="utf-8").replace("<!-- workspace-navigation -->", navigation)
+
+
 @app.get("/")
 async def index():
-    return FileResponse(ROOT / "index.html", media_type="text/html")
+    return HTMLResponse(dashboard_template("index.html", "/"))
 
 
 @app.get("/workspace")
 async def browser_workspace():
-    return FileResponse(ROOT / "dashboard" / "workspace.html", media_type="text/html")
+    return HTMLResponse(dashboard_template("dashboard/workspace.html", "/workspace"))
 
 
 @app.get("/dashboard-font.woff2")
@@ -838,41 +847,33 @@ def pair_link(base, token):
     return "thirdeye://pair?" + urlencode({"url": base, "token": token})
 
 
-PAIR_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DrishtiGuide pairing</title>
-<style>body{background:#14181c;color:#e8ecef;font-family:sans-serif;max-width:640px;margin:24px auto;padding:0 16px}
-.card{background:#1e242b;border-radius:12px;padding:16px;margin:16px 0}
-svg{display:block;margin:12px auto;max-width:100%}
-code{display:block;background:#0d1117;padding:10px;border-radius:8px;word-break:break-all;margin:8px 0}
-.warn{color:#e8b64c}.btn{display:inline-block;background:#674398;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-top:8px}</style></head>
-<body><a href="/" style="color:#dbc9ff">Back to phone activity</a><h2>Pair your phone</h2>
-<p class="warn">This QR contains your access token; do not share the screen.</p>
-<p>Scan with your phone camera. If it does not open DrishtiGuide, copy the link text and tap Paste pairing link in the app.</p>
-__CARDS__
-</body></html>"""
+def pairing_network(label, base, token):
+    link = pair_link(base, token)
+    escaped_link = html.escape(link)
+    try:
+        svg = segno.make_qr(link, error="m").svg_inline(border=4, omitsize=True, dark="#25222b", light="#ffffff")
+        graphic = f'<div class="qr" role="img" aria-label="Pairing QR code for {html.escape(label)}">{svg}</div>'
+    except Exception:
+        graphic = "<p>QR code unavailable. Use the pairing link.</p>"
+    return (
+        f'<section class="network">{graphic}<div><h3>{html.escape(label)}</h3>'
+        f'<p class="address">{html.escape(base)}</p>'
+        f'<a class="button primary" href="{escaped_link}">Open in DrishtiGuide</a>'
+        f'<details><summary>Manual pairing link</summary><code>{escaped_link}</code></details></div></section>'
+    )
 
 
 @app.get("/pair")
-async def pair_page():
+def pair_page():
     token = os.getenv("PHONE_TOKEN", "")
-    if not token:
-        return HTMLResponse(PAIR_HTML.replace("__CARDS__",
-            "<p>PHONE_TOKEN is not set in .env — generate one and restart the server.</p>"))
-    cards = []
-    for label, base in pair_candidates():
-        link = pair_link(base, token)
-        try:
-            svg = segno.make(link, error="m").svg_inline(scale=4, border=2,
-                                                       dark="#e8ecef", light="#1e242b")
-        except Exception:
-            svg = ""
-        safe_base, safe_link = html.escape(base), html.escape(link)
-        cards.append(
-            f'<div class="card"><b>{html.escape(label)}</b><br><code>{safe_base}</code>'
-            f'<code>{safe_link}</code>{svg}'
-            f'<a class="btn" href="{safe_link}">Open in DrishtiGuide</a></div>')
-    return HTMLResponse(PAIR_HTML.replace("__CARDS__",
-        "".join(cards) or "<p>No network address found.</p>"))
+    if token:
+        networks = "".join(pairing_network(label, base, token) for label, base in pair_candidates())
+        if not networks:
+            networks = '<p class="pair-empty">No network address found. Connect to Wi-Fi or Tailscale and reload.</p>'
+    else:
+        networks = '<p class="pair-empty">PHONE_TOKEN is not set in .env. Add the token and restart the server.</p>'
+    page = dashboard_template("dashboard/pair.html", "/pair")
+    return HTMLResponse(page.replace("<!-- pairing-networks -->", networks))
 
 
 def host_binding_ok(host, token):

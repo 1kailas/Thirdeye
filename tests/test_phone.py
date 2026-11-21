@@ -431,10 +431,19 @@ class PhoneTests(unittest.TestCase):
             self.assertEqual(remote.get("/api/debug/items").status_code, 403)
             self.assertEqual(remote.get("/debug").status_code, 403)
 
+    def test_local_pages_share_navigation_with_the_correct_active_link(self):
+        for page, active in (("/", "/"), ("/debug", "/"), ("/workspace", "/workspace"), ("/pair", "/pair")):
+            with self.subTest(page=page):
+                response = self.client.get(page)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('href="/dashboard-assets/theme.css"', response.text)
+                self.assertIn(f'<a aria-current="page" href="{active}"', response.text)
+                self.assertEqual(response.text.count('aria-current="page"'), 1)
+
     def test_pair_page_loopback_only(self):
         response = self.client.get("/pair")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("<svg", response.text)
+        self.assertIn('<svg viewBox="', response.text)
         self.assertIn("thirdeye://pair", response.text)
         self.assertIn("do not share the screen", response.text)
         with TestClient(server.app, base_url="http://localhost:8000",
