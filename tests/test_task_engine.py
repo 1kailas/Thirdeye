@@ -54,7 +54,7 @@ def washer(relation="same", **changes):
 def step(**changes):
     return ProposedStep(**(dict(
         action_ml="കോട്ടൺ തിരഞ്ഞെടുക്കുക", control_id="dial",
-        instruction_ml="നോബിലെ സൂചിക കോട്ടൺ അടയാളത്തിലേക്ക് തിരിക്കുക.",
+        instruction_ml="നോബിന്റെ മുകൾഭാഗം ഇടത്തേക്ക് വരത്തക്കവിധം കാൽ വട്ടം തിരിക്കുക.",
         expected_result="സൂചിക കോട്ടൺ അടയാളത്തിനുനേരെ കാണുന്നു.",
         visually_verifiable=True, final_candidate=True,
     ) | changes))
@@ -91,6 +91,30 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.session.verification, "VERIFIED")
         self.assertEqual(self.session.state(True), "TASK_COMPLETED")
         self.assertFalse(self.session.public()["current_instruction"])
+
+    def test_spoken_step_starts_at_the_physical_landmark(self):
+        spoken = self.begin()
+        self.assertEqual(spoken, f"{self.session.step_control.position_ml} {step().instruction_ml}")
+        self.assertEqual(self.session.response, spoken)
+
+    def test_dial_distance_uses_pointer_and_target_positions(self):
+        for start, target, direction, amount, side in (
+                (3, 12, "counterclockwise", "കാൽ വട്ടം", "ഇടത്തേക്ക്"),
+                (12, 3, "clockwise", "കാൽ വട്ടം", "വലത്തേക്ക്"),
+                (12, 3, "counterclockwise", "അല്പം", "ഇടത്തേക്ക്"),
+                (None, 3, "clockwise", "അല്പം", "വലത്തേക്ക്"),
+                (12, None, "clockwise", "അല്പം", "വലത്തേക്ക്")):
+            with self.subTest(start=start, target=target, direction=direction):
+                self.session = TaskSession()
+                spoken = self.begin(instruction_ml="അഞ്ചിൽ നിന്ന് ഒന്നിലേക്ക് തിരിക്കുക.",
+                                    dial_turn=dict(direction=direction, pointer_clock=start,
+                                                   target_clock=target))
+                self.assertNotIn("ഒന്നിലേക്ക്", spoken)
+                self.assertIn(amount, spoken)
+                self.assertIn(side, spoken)
+                self.assertIn("ഫോട്ടോയിൽ", spoken)
+                self.assertIn(self.session.public()["current_instruction"], spoken)
+                self.assertIn(self.session.context()["pending_step"]["action_ml"], spoken)
 
     def test_unchanged_control_is_not_verified(self):
         self.begin()
@@ -135,6 +159,27 @@ class SessionTests(unittest.TestCase):
         self.session.accept_guidance(washer("first", current_step=step()), self.after, "resume")
         self.assertEqual(self.session.number, 1)
         self.assertIs(self.session.baseline, self.after)
+
+    def test_readable_retake_with_no_step_reports_observation(self):
+        self.session.accept_guidance(washer("first", intent="new_task", task_understood=self.goal,
+                                             needs_new_image=True), self.before, "query", self.goal)
+        reply = washer(observation_ml="നോബിന് ചുറ്റും ഒന്നു മുതൽ നാലു വരെ അക്കങ്ങൾ കാണുന്നു.",
+                       message_ml="നോബ് തിരിക്കുക.")
+        self.assertEqual(self.session.accept_guidance(reply, self.after, "resume"), reply.observation_ml)
+        self.assertIsNone(self.session.step)
+        self.assertFalse(self.session.needs_new_image)
+
+    def test_retake_with_unconfirmed_identity_explains_remaining_uncertainty(self):
+        first = washer("first", intent="new_task", task_understood=self.goal, needs_new_image=True)
+        self.session.accept_guidance(first, self.before, "query", self.goal)
+        reason = "സൂചിക ഏത് അടയാളത്തിലാണ് എന്ന് തിരിച്ചറിയാനായില്ല."
+        retry = washer("unclear", needs_new_image=True, uncertainty_reason=reason, current_step=step())
+        response = self.session.accept_guidance(retry, self.after, "resume")
+        self.assertIn(reason, response)
+        self.assertIn("Cotton", response)
+        self.assertNotIn(step().instruction_ml, response)
+        self.assertIsNone(self.session.step)
+        self.assertIs(self.session.latest, self.before)
 
     def test_followup_preserves_step_and_baseline(self):
         self.begin()
@@ -396,6 +441,20 @@ class SarvamTests(unittest.TestCase):
                                          {"expected_result": step().expected_result})
         self.assertEqual(observed.verification_state, "VERIFIED")
         self.assertEqual(post.call_count, 2)
+
+    def test_dial_and_followup_routes_send_nonvisual_guidance(self):
+        image = panel_jpeg(False)
+        question = "How do I turn it from 5 to 1?"
+        with patch.object(self.ai, "_vision") as vision:
+            self.ai.answer(image, question, [])
+            for mode in ("query", "resume", "simplify", "explain"):
+                self.ai.guide(image, {}, mode, question)
+            self.ai.locate(image, "Which knob?")
+        for call in vision.call_args_list:
+            prompt = call.args[1]
+            self.assertIn("guiding a blind person", prompt)
+            self.assertIn("turn from 5 to 1", prompt)
+            self.assertIn("Count clicks only when", prompt)
 
     def test_vision_system_prompt_requests_compact_json(self):
         marker = "single compact line"

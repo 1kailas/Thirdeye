@@ -11,7 +11,7 @@ from time import perf_counter
 import requests
 from pydantic import ValidationError
 
-from task_engine import (ANSWER_SYSTEM, Answer, Guidance, LOCATE_SYSTEM, Locate, SYSTEM,
+from task_engine import (ANSWER_SYSTEM, Answer, Guidance, LOCATE_SYSTEM, Locate, RetakeGuidance, SYSTEM,
                          Verification, VERIFY_SYSTEM)
 
 log = logging.getLogger("drishtiguide")
@@ -37,7 +37,14 @@ MODE_PROMPTS = {
         "If the scene is too unclear, retain the user goal and ask for a suitable image."
     ),
     "next": "Use the completed steps and the photo. Propose one remaining action for the existing goal.",
-    "resume": "Use the new photo to propose one action for the existing goal if unambiguous.",
+    "resume": (
+        "Re-evaluate the existing task from the current photo. If its control and target setting "
+        "are now clear, put one supported action in current_step (including the control_id), "
+        "set intent=advance and needs_new_image=false. Express a supported change as physical movement. "
+        "Do not infer the current setting from "
+        "the axis or shadow of a handle with no identifiable pointer. If an action cannot be "
+        "grounded, leave current_step null and give a short factual observation of the markings."
+    ),
     "simplify": ("Explain the pending instruction in simpler Malayalam without changing the control "
                  "or action. Set intent=answer and current_step=null. Do not advance the task."),
     "explain": ("Explain the pending step for someone who cannot see the photo. In up to four short "
@@ -110,7 +117,7 @@ class SarvamClient:
         finally:
             log.info("Sarvam %s %s %s %.1f ms", path, model, status, elapsed(started))
 
-    def guide(self, image, context, mode, question):
+    def guide(self, image, context, mode, question, reference=None):
         request = {
             "operation": MODE_PROMPTS[mode],
             "device_relation_rule": (
@@ -121,7 +128,18 @@ class SarvamClient:
             ),
             "context": context, "user_request": question,
         }
-        return self._vision(Guidance, SYSTEM, request, [("current image", image)])
+        images = [("current image", image)]
+        if reference is not None:
+            images.insert(0, ("previous view for device identification only", reference))
+        schema = Guidance
+        if reference is not None and context.get("device_name") and context.get("category") != "unclear":
+            schema = RetakeGuidance
+            request["device_relation_rule"] = (
+                "Compare the two supplied photos. A crop, rotation, or lighting change is compatible "
+                "with the same device. Match physical controls and layout. Use unclear when no "
+                "landmark can be matched, or different if there is positive evidence."
+            )
+        return self._vision(schema, SYSTEM, request, images)
 
     def verify(self, before, after, context):
         return self._vision(Verification, VERIFY_SYSTEM, context,

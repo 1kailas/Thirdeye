@@ -110,6 +110,29 @@ class PhoneTests(unittest.TestCase):
         record = server.phone_debug_records[-1]
         self.assertEqual(record["meta"]["locate"]["rows"], [["POWER", "MUTE"], ["EXIT", "OK"]])
 
+    def test_turn_direction_and_silent_retake_use_current_and_reference_photos(self):
+        self.begin_task()  # A previous task must not supply the new task's reference.
+        self.answer.side_effect = lambda *args: (Answer(
+            is_device_task=False, wants_location=True, answer_ml="ശരി"), 1.0)
+        self.transcribe.side_effect = lambda *args: ("എങ്ങോട്ട് തിരിച്ചാലാണ് വേഗം കുറയുക?", 1.0)
+        self.guide.side_effect = [
+            (washer("different", intent="new_task", task_understood="കോട്ടൺ തിരഞ്ഞെടുക്കുക",
+                    needs_new_image=True, current_step=None), 1.0),
+            (washer("same", current_step=step()), 1.0),
+        ]
+        first = self.ask(photo_payload(audio_b64=b64(b"RIFF" + bytes(60)), audio_type="audio/wav")).json()
+        self.assertEqual(first["debug"]["route"], "guide")
+        self.locate.assert_not_called()
+        reference = self.guide.call_args.args[0]
+        second = self.ask(photo_payload(image_b64=b64(jpeg_bytes(color="blue")))).json()
+        current, context, mode, _, previous = self.guide.call_args.args
+        self.assertEqual(previous, reference)
+        self.assertNotEqual(current, previous)
+        self.assertEqual(mode, "resume")
+        self.assertEqual(context["task"], "കോട്ടൺ തിരഞ്ഞെടുക്കുക")
+        self.assertIn(step().instruction_ml, second["reply"])
+        self.assertFalse(self.rt.session.needs_new_image)
+
     def test_stream_returns_ordered_ndjson_matching_reply(self):
         reply = "ഇത് ആദ്യത്തെ വാചകം ആണ്. ഇത് രണ്ടാമത്തെ വാചകം ആണ്. ഇത് മൂന്നാമത്തെ വാചകം ആണ്. ഇത് നാലാമത്തെ വാചകം ആണ്."
         self.answer.side_effect = lambda *args: (Answer(

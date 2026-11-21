@@ -96,6 +96,13 @@ def intent(text):
     return PHRASES.get(normalized, "query")
 
 
+def asks_turn_direction(text):
+    words = unicodedata.normalize("NFC", text).casefold()
+    return (("turn" in words and any(q in words for q in ("which way", "which direction", "clockwise")))
+            or (any(q in words for q in ("എങ്ങോട്ട്", "ഏത് ദിശ", "ഏതു ദിശ", "ഏത് വശ"))
+                and any(verb in words for verb in ("തിരിക്ക", "തിരിച്ച", "കറക്ക"))))
+
+
 class Runtime:
     def __init__(self):
         rotation = int(os.getenv("CAMERA_ROTATION", "0"))
@@ -180,7 +187,9 @@ class Runtime:
         shot = shot or (await self.capture(crop, revision) if capture else task.latest)
         context = task.context()
         self.phase = "ANALYZING"
-        reply, ms = await asyncio.to_thread(self.ai.guide, shot.jpeg, context, mode, text)
+        previous = task.latest if mode in ("query", "resume") and task.needs_new_image else None
+        reference = previous.jpeg if previous and previous.jpeg != shot.jpeg else None
+        reply, ms = await asyncio.to_thread(self.ai.guide, shot.jpeg, context, mode, text, reference)
         self.check(revision)
         self.metrics["vision_ms"] = ms
         return task.accept_guidance(reply, shot, mode, text)
@@ -697,7 +706,8 @@ async def phone_ask(request: Request):
                 rt.ai.answer, shot.jpeg, text, list(rt.phone_history), task_ctx)
             rt.check(revision)
             rt.metrics["vision_ms"] = ms
-            if result.wants_location:
+            dial_operation = asks_turn_direction(text) and result.wants_location
+            if result.wants_location and not (result.is_device_task or dial_operation):
                 rt.phase = "LOCATING"
                 located, ms = await asyncio.to_thread(rt.ai.locate, shot.jpeg, text, rt.locate_target)
                 rt.check(revision)
@@ -707,7 +717,7 @@ async def phone_ask(request: Request):
                 rt.locate_target = located.target_label or rt.locate_target
                 if debug is not None:
                     debug["meta"]["locate"] = located.model_dump()
-            elif result.is_device_task:
+            elif result.is_device_task or dial_operation:
                 route = "guide"
                 message = await rt.run(action, text, Crop(), revision, shot)
             else:
