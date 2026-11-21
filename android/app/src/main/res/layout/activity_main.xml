@@ -18,6 +18,14 @@
             android:textStyle="bold"
             android:contentDescription="DrishtiGuide app title" />
 
+        <Button
+            android:id="@+id/pastePairing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Paste pairing link"
+            android:contentDescription="Paste a thirdeye pairing link from the clipboard to fill in the server address and token" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -8,7 +8,7 @@ if [[ ! -x "$venv_python" ]]; then
     python -m venv .venv
 fi
 
-if ! "$venv_python" -c 'import fastapi, uvicorn, PIL, requests; from pydantic import ConfigDict, StringConstraints' 2>/dev/null; then
+if ! "$venv_python" -c 'import fastapi, uvicorn, PIL, requests, segno; from pydantic import ConfigDict, StringConstraints' 2>/dev/null; then
     printf '%s\n' 'Installing DrishtiGuide dependencies in .venv.'
     "$venv_python" -m pip --disable-pip-version-check install --timeout 10 --retries 1 -r requirements.txt
 fi

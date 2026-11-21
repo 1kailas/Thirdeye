@@ -1,5 +1,16 @@
 # Thirdeye · DrishtiGuide AI
 
+## Quick start (3 steps)
+
+1. Run the server: `./run.sh` (reads `.env`; see Setup below).
+2. On this PC open `http://127.0.0.1:8000/pair` and scan the QR code with the
+   phone camera — it pairs the app with the server address and token.
+3. In the app tap **Start service**, grant camera/microphone, and enable the
+   key service in Accessibility settings. Hold **Volume Up** to ask.
+
+Docs: [architecture](docs/ARCHITECTURE.md) · [demo script](docs/DEMO.md) ·
+[Android build/install](android/README.md)
+
 ## Problem statement
 
 Blind and low-vision people in Kerala often cannot use everyday appliances independently. Washing-machine panels, TV remotes and fan regulators rely on small printed labels, symbols and touch-less displays. Most existing visual-assistance tools are English-first, need a screen interaction to start, or describe a scene without helping the user act on it safely.
@@ -23,6 +34,7 @@ Routing on the server:
 
 - **General route**: a question about the photo (what is this, read this, what is ahead) is answered directly in Malayalam, whatever language the user spoke.
 - **Appliance route**: requests to operate or locate a control on a washer, remote or fan use structured guidance, one step at a time. A step is only confirmed when before and after photos show the change, and gas, mains, medical and industrial equipment are refused with a safety note.
+- Voice commands work in Malayalam and English (`repeat`, `done`, `next step`, `where is the button`, `stop`, `start over`, …); anything else is treated as a question about the photo and answered directly in one to three short Malayalam sentences.
 
 Security: the phone talks to the server with a bearer token (`PHONE_TOKEN`) over Tailscale or the local network. The browser UI and debug pages stay reachable from the PC only. Photos and voice go to Sarvam for processing, and the Sarvam key never leaves the PC.
 
@@ -92,7 +104,7 @@ The Android app in `android/` turns the phone into the client: it takes the phot
 Server setup:
 
 1. In `.env`, set `CAMERA_URL=off` (the phone supplies every photo, so no IP Webcam stream is needed), `HOST=0.0.0.0`, and `PHONE_TOKEN` to a random secret of at least 24 characters. Generate one with `python -c "import secrets;print(secrets.token_urlsafe(32))"` and keep `.env` at `chmod 600`.
-2. Find the laptop's address on your phone network — a Tailscale `100.x.y.z` address or the LAN IP — and enter `http://<address>:8000` plus the token in the app. The app talks plain HTTP, so use Tailscale or a trusted LAN, never a public network.
+2. The easiest pairing is the QR page: with the server running, open `http://127.0.0.1:<port>/pair` on the PC and scan the QR with the phone camera — the `thirdeye://pair` link fills in the server address and token automatically. You can also enter `http://<address>:8000` plus the token by hand. The app talks plain HTTP, so use Tailscale or a trusted LAN, never a public network.
 3. `GET /api/phone/ping` returns `{"ok":true,"ai_ready":bool}` and `POST /api/phone/ask` accepts `{"image_b64","audio_b64","audio_type"}` and always answers `{"ok","reply","transcript","audio_b64","audio_type"}`. Both require `Authorization: Bearer <PHONE_TOKEN>`.
 
 Building and installing the app (see `android/README.md` for details):
@@ -139,3 +151,10 @@ DRISHTIGUIDE_LIVE=1 python -m unittest discover -s tests -p test_live.py -v
 Open **കീബോർഡ് കുറുക്കുവഴികളും സമയവും** to see measured camera connection time, local frame age, capture and JPEG encoding times, Sarvam API latencies, and the elapsed browser time until the written reply and the start of its playback. Frame age measures time since the laptop received the data.
 
 The offline timing check processed 30 synthetic 1920×1080 images. Median local resize and JPEG encoding took approximately 29 ms. Live phone and Sarvam timings require the hardware and account checks above.
+
+## Roadmap
+
+- Direct power-button trigger — not possible on Android (the OS does not expose power-button hold/release to apps); Volume Up is the current trigger.
+- On-device fallback — run STT/vision/TTS on the phone when the PC is unreachable.
+- More languages — extend beyond Malayalam/English/Hindi input while keeping Malayalam output.
+- Wearable camera — support a glasses or clip-on camera as the capture device.

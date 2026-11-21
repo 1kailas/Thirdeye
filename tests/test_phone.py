@@ -210,10 +210,11 @@ class PhoneTests(unittest.TestCase):
         self.assertIsNone(data["transcript"])
         self.guide.assert_not_called()
         self.answer.assert_called_once()
-        image_arg, question, history = self.answer.call_args.args
+        image_arg, question, history, task_ctx = self.answer.call_args.args
         self.assertTrue(image_arg.startswith(b"\xff\xd8"))
         self.assertEqual(question, "")
         self.assertEqual(history, [])
+        self.assertIsNone(task_ctx)
         self.assertEqual(data["debug"]["route"], "general")
         self.assertEqual(data["debug"]["action"], "capture")
         record = server.phone_debug_records[-1]
@@ -240,7 +241,7 @@ class PhoneTests(unittest.TestCase):
         self.assertEqual(data["transcript"], "what is in front of me")
         self.assertEqual(data["debug"]["route"], "general")
         self.assertEqual(data["debug"]["transcript_language"], "en-IN")
-        _, question, _ = self.answer.call_args.args
+        _, question, _, _ = self.answer.call_args.args
         self.assertEqual(question, "what is in front of me")
         record = server.phone_debug_records[-1]
         meta = json.loads((record["dir"] / "meta.json").read_text(encoding="utf-8"))
@@ -265,6 +266,50 @@ class PhoneTests(unittest.TestCase):
         self.answer.assert_not_called()
         self.guide.assert_called()
 
+    def test_active_task_unrelated_question_uses_general(self):
+        self.begin_task()
+        self.transcribe.side_effect = lambda a, c: ("what time is it", 1.0)
+        self.answer.side_effect = lambda *args: (
+            Answer(is_device_task=False, answer_ml="മുന്നിൽ ഒരു cabinet ഉണ്ട്."), 1.0)
+        response = self.ask({"image_b64": b64(jpeg_bytes()),
+                             "audio_b64": b64(b"wav"), "audio_type": "audio/wav"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["transcript"], "what time is it")
+        self.assertEqual(data["debug"]["route"], "general")
+        self.assertEqual(data["reply"], "മുന്നിൽ ഒരു cabinet ഉണ്ട്.")
+        _, _, _, task_ctx = self.answer.call_args.args
+        self.assertIsNotNone(task_ctx)
+        self.assertIn("active_task", task_ctx)
+
+    def test_active_task_related_question_uses_guide(self):
+        self.begin_task()
+        self.transcribe.side_effect = lambda a, c: ("how do I continue", 1.0)
+        self.answer.side_effect = lambda *args: (Answer(is_device_task=True, answer_ml="ok"), 1.0)
+        response = self.ask({"image_b64": b64(jpeg_bytes()),
+                             "audio_b64": b64(b"wav"), "audio_type": "audio/wav"})
+        data = response.json()
+        self.assertEqual(data["debug"]["route"], "guide")
+        self.guide.assert_called()
+
+    def test_intent_english_and_malayalam(self):
+        cases = {
+            "Repeat!": "repeat", "say it again?": "repeat", "DONE!!": "verify",
+            "I did it.": "verify", "Next step": "next", "what now?": "next",
+            "Where is the button?": "locate", "which button": "locate",
+            "simpler please": "query", "explain in detail": "explain",
+            "tell me more": "explain", "be quiet": "stop", "shut up!": "stop",
+            "start over": "reset", "clear task": "reset",
+            "skip verification": "continue", "continue without checking": "continue",
+            "വീണ്ടും പറയൂ": "repeat", "ഒന്നൂടെ പറയൂ": "repeat",
+            "ചെയ്തു": "verify", "അടുത്തത്": "next",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(server.intent(text), expected)
+        self.assertEqual(server.intent("what is this"), "query")
+        self.assertEqual(server.intent("take a photo"), "query")
+
     def test_debug_endpoints_and_id_validation(self):
         self.ask(photo_payload())
         items = self.client.get("/api/debug/items")
@@ -286,6 +331,23 @@ class PhoneTests(unittest.TestCase):
                         client=("10.9.9.9", 1234)) as remote:
             self.assertEqual(remote.get("/api/debug/items").status_code, 403)
             self.assertEqual(remote.get("/debug").status_code, 403)
+
+    def test_pair_page_loopback_only(self):
+        response = self.client.get("/pair")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("<svg", response.text)
+        self.assertIn("thirdeye://pair", response.text)
+        self.assertIn("do not share the screen", response.text)
+        with TestClient(server.app, base_url="http://localhost:8000",
+                        client=("10.9.9.9", 1234)) as remote:
+            self.assertEqual(remote.get("/pair").status_code, 403)
+
+    def test_pair_page_without_token(self):
+        with patch.dict(os.environ, {"PHONE_TOKEN": ""}):
+            response = self.client.get("/pair")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("PHONE_TOKEN is not set", response.text)
+            self.assertNotIn("<svg", response.text)
 
     def test_debug_disabled_returns_404(self):
         with patch.dict(os.environ, {"PHONE_DEBUG": "0"}):

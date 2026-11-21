@@ -124,8 +124,11 @@ class SarvamClient:
         return self._vision(Verification, VERIFY_SYSTEM, context,
                             [("before", before), ("after", after)])
 
-    def answer(self, image, question, history):
+    def answer(self, image, question, history, task=None):
         request = {"user_question": question or "", "recent": history}
+        if task:
+            request["active_task"] = task.get("active_task")
+            request["pending_instruction"] = task.get("pending_instruction")
         return self._vision(Answer, ANSWER_SYSTEM, request, [("current image", image)])
 
     def _vision(self, schema, system, request, images):
@@ -134,6 +137,7 @@ class SarvamClient:
             content.append({"type": "text", "text": name})
             url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
             content.append({"type": "image_url", "image_url": {"url": url}})
+        system += " Output the JSON as a single compact line: no newlines, no indentation and no spaces between tokens."
         payload = {
             "model": self.vision_model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],
@@ -145,13 +149,26 @@ class SarvamClient:
         }
         if self.vision_model == "glm5.3-flash":
             payload.update(reasoning_effort="low", max_tokens=3000)
-        data, duration = self._post("/v2/chat/completions", "ചിത്രം",
-                                    self.vision_model, 30, json=payload)
-        try:
-            result = schema.model_validate_json(data["choices"][0]["message"]["content"])
-        except (KeyError, IndexError, TypeError, ValidationError):
-            raise SarvamError("ചിത്രത്തിന് ശരിയായ മറുപടി ലഭിച്ചില്ല. വീണ്ടും ശ്രമിക്കുക.") from None
-        return result, duration
+        for _ in range(2):
+            data, duration = self._post("/v2/chat/completions", "ചിത്രം",
+                                        self.vision_model, 30, json=payload)
+            choice = {}
+            try:
+                choice = data["choices"][0]
+                finish = choice.get("finish_reason")
+                tokens = (data.get("usage") or {}).get("completion_tokens")
+                result = schema.model_validate_json(choice["message"]["content"])
+            except (KeyError, IndexError, TypeError, ValidationError):
+                log.warning("Sarvam vision %s unparseable finish_reason=%s completion_tokens=%s",
+                            schema.__name__, choice.get("finish_reason"),
+                            (data.get("usage") or {}).get("completion_tokens"))
+                continue
+            if finish == "length":
+                log.warning("Sarvam vision %s truncated finish_reason=%s completion_tokens=%s",
+                            schema.__name__, finish, tokens)
+                continue
+            return result, duration
+        raise SarvamError("ചിത്രത്തിന് ശരിയായ മറുപടി ലഭിച്ചില്ല. വീണ്ടും ശ്രമിക്കുക.") from None
 
     def transcribe(self, audio, content_type):
         suffix = {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4", "audio/wav": "wav"}

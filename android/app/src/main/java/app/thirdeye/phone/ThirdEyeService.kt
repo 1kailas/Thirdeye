@@ -62,9 +62,13 @@ class ThirdEyeService : LifecycleService() {
     private lateinit var history: History
 
     private var tts: TextToSpeech? = null
+    private var malayalamTts = false
     private var mediaPlayer: MediaPlayer? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: android.media.AudioFocusRequest? = null
+    private var tickGenerator: android.media.ToneGenerator? = null
+    private var waitTicker: Runnable? = null
+    private var watchdogTicker: Runnable? = null
 
     private var photoJob: Deferred<ByteArray?>? = null
     private var capture: ImageCapture? = null
@@ -99,7 +103,9 @@ class ThirdEyeService : LifecycleService() {
             if (status == TextToSpeech.SUCCESS) {
                 val engine = tts ?: return@TextToSpeech
                 val malayalam = engine.setLanguage(Locale.forLanguageTag("ml-IN"))
-                if (malayalam == TextToSpeech.LANG_MISSING_DATA || malayalam == TextToSpeech.LANG_NOT_SUPPORTED) {
+                malayalamTts = malayalam != TextToSpeech.LANG_MISSING_DATA
+                    && malayalam != TextToSpeech.LANG_NOT_SUPPORTED
+                if (!malayalamTts) {
                     engine.language = Locale.getDefault()
                 }
             }
@@ -173,8 +179,9 @@ class ThirdEyeService : LifecycleService() {
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
                 if (jpeg == null) {
-                    settleWithError(getString(R.string.err_no_photo))
+                    settleWithError(localError(false))
                 } else {
+                    clickTone()
                     send(jpeg, null)
                 }
             }
@@ -188,7 +195,7 @@ class ThirdEyeService : LifecycleService() {
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
                 if (jpeg == null) {
-                    settleWithError(getString(R.string.err_no_photo))
+                    settleWithError(localError(false))
                 } else {
                     send(jpeg, wav)
                 }
@@ -197,6 +204,8 @@ class ThirdEyeService : LifecycleService() {
             TriggerStateMachine.SmAction.InterruptPlayback -> releasePlayer()
             TriggerStateMachine.SmAction.CancelAll -> {
                 stopRecordingInternal()
+                stopWaitTicker()
+                stopWatchdog()
                 photoJob?.cancel()
                 photoJob = null
                 releasePlayer()
@@ -214,7 +223,7 @@ class ThirdEyeService : LifecycleService() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                settleWithError(getString(R.string.err_network))
+                settleWithError(localError(true))
             }
         }
     }
@@ -224,13 +233,16 @@ class ThirdEyeService : LifecycleService() {
         scope.launch {
             try {
                 sendTone()
+                startWaitTicker()
+                startWatchdog()
                 val result = withContext(Dispatchers.IO) { api.ask(imageJpeg, audioWav) }
                 if (result == null) {
                     recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
                         System.currentTimeMillis() - startedAt, getString(R.string.err_network))
-                    settleWithError(getString(R.string.err_network))
+                    settleWithError(localError(true))
                     return@launch
                 }
+                stopWatchdog()
                 onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
                 lastStatus = result.transcript?.let { "$it\n${result.reply}" } ?: result.reply
                 recordHistory(imageJpeg, audioWav, result.transcript, result.reply,
@@ -242,7 +254,7 @@ class ThirdEyeService : LifecycleService() {
             } catch (failure: Throwable) {
                 recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
                     System.currentTimeMillis() - startedAt, failure.message)
-                settleWithError(getString(R.string.err_network))
+                settleWithError(localError(true))
             }
         }
     }
@@ -257,13 +269,72 @@ class ThirdEyeService : LifecycleService() {
     }
 
     private fun settleWithError(message: String) {
+        stopWaitTicker()
         lastStatus = message
         onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
         errorTone()
         speakLocal("error", message)
     }
 
+    private fun localError(network: Boolean): String {
+        return if (malayalamTts) {
+            getString(if (network) R.string.err_network_ml else R.string.err_no_photo_ml)
+        } else {
+            getString(if (network) R.string.err_network else R.string.err_no_photo)
+        }
+    }
+
+    private fun startWaitTicker() {
+        stopWaitTicker()
+        val tick = object : Runnable {
+            override fun run() {
+                playWaitTick()
+                mainHandler.postDelayed(this, 1500)
+            }
+        }
+        waitTicker = tick
+        mainHandler.postDelayed(tick, 1500)
+    }
+
+    private fun stopWaitTicker() {
+        waitTicker?.let { mainHandler.removeCallbacks(it) }
+        waitTicker = null
+    }
+
+    private fun playWaitTick() {
+        runCatching {
+            val generator = tickGenerator ?: android.media.ToneGenerator(
+                AudioManager.STREAM_MUSIC, 35).also { tickGenerator = it }
+            generator.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 60)
+        }
+    }
+
+    private fun clickTone() {
+        runCatching {
+            android.media.ToneGenerator(AudioManager.STREAM_MUSIC, 55)
+                .startTone(android.media.ToneGenerator.TONE_PROP_ACK, 60)
+        }
+    }
+
+    private fun startWatchdog() {
+        stopWatchdog()
+        val watchdog = Runnable {
+            watchdogTicker = null
+            sm?.cancel()?.forEach(::executeAction)
+            errorTone()
+            speakLocal("error", localError(true))
+        }
+        watchdogTicker = watchdog
+        mainHandler.postDelayed(watchdog, 100_000)
+    }
+
+    private fun stopWatchdog() {
+        watchdogTicker?.let { mainHandler.removeCallbacks(it) }
+        watchdogTicker = null
+    }
+
     private fun playReply(audioB64: String?, reply: String) {
+        stopWaitTicker()
         if (audioB64 != null) {
             val clip = runCatching {
                 Base64.decode(audioB64, Base64.DEFAULT)
@@ -379,6 +450,7 @@ class ThirdEyeService : LifecycleService() {
                                 .build()
                             val capture = ImageCapture.Builder()
                                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                .setFlashMode(ImageCapture.FLASH_MODE_AUTO)
                                 .build()
                             this@ThirdEyeService.capture = capture
                             provider.unbindAll()

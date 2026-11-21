@@ -4,11 +4,15 @@ import asyncio
 import base64
 import binascii
 import hmac
+import html
+import ipaddress
 import json
 import logging
 import os
 import re
 import shutil
+import socket
+import subprocess
 import unicodedata
 from collections import deque
 from contextlib import asynccontextmanager
@@ -17,9 +21,10 @@ from io import BytesIO
 from pathlib import Path
 from time import perf_counter
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import uvicorn
+import segno
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -63,22 +68,30 @@ VOICE_COMMANDS = {
     "capture": ("ഇത് എന്താണ്", "ഇതെന്താണ്", "ഫോട്ടോ എടുക്കൂ", "ഫോട്ടോ എടുക്കുക", "ചിത്രം എടുക്കൂ",
                 "പടം എടുക്കൂ", "ഫോട്ടോ എടുക്ക്", "ഫോട്ടോ എടുക്കണം", "ചിത്രം എടുക്കുക"),
     "verify": ("ചെയ്തു", "ചെയ്തിട്ടുണ്ട്", "ഞാൻ ചെയ്തു", "കഴിഞ്ഞു", "ചെയ്തു കഴിഞ്ഞു",
-               "സ്ഥിരീകരിക്കൂ", "പരിശോധിക്കൂ", "ഒന്ന് പരിശോധിക്കൂ", "ചെയ്തു നോക്കൂ", "ശരിയായോ"),
-    "next": ("അടുത്തത്", "അടുത്ത ഘട്ടം", "അടുത്ത ഘട്ടം പറയൂ", "ഇനി എന്ത് ചെയ്യണം"),
-    "repeat": ("വീണ്ടും പറയൂ", "ഒന്നുകൂടി പറയൂ", "വീണ്ടും പറയുക", "ആവർത്തിക്കൂ", "ഒന്നൂടെ പറയൂ"),
-    "locate": ("എവിടെയാണ്", "ബട്ടൺ എവിടെയാണ്", "ഏത് ബട്ടൺ", "ഏത് ബട്ടണാണ്", "ഏത് നോബ്"),
-    "simplify": ("ലളിതമായി പറയൂ", "കുറച്ചുകൂടി ലളിതമായി പറയൂ", "എളുപ്പത്തിൽ പറയൂ"),
-    "explain": ("കുറച്ചുകൂടി വിശദമായി പറയൂ", "വിശദമായി പറയൂ", "ഒന്ന് വിശദീകരിക്കൂ"),
-    "stop": ("നിർത്തൂ", "നിർത്തുക", "നിർത്ത്", "ഇപ്പോൾ നിർത്തൂ", "മതി"),
-    "continue": ("സ്ഥിരീകരിക്കാതെ തുടരൂ", "സ്ഥിരീകരിക്കാതെ തുടരുക", "ഫോട്ടോ സ്ഥിരീകരണമില്ലാതെ തുടരൂ"),
-    "reset": ("പുതിയ ദൗത്യം", "ദൗത്യം മായ്ക്കൂ", "ദൗത്യം പുനരാരംഭിക്കൂ"),
+               "സ്ഥിരീകരിക്കൂ", "പരിശോധിക്കൂ", "ഒന്ന് പരിശോധിക്കൂ", "ചെയ്തു നോക്കൂ", "ശരിയായോ",
+               "done", "i did it", "i have done it", "check it", "check now"),
+    "next": ("അടുത്തത്", "അടുത്ത ഘട്ടം", "അടുത്ത ഘട്ടം പറയൂ", "ഇനി എന്ത് ചെയ്യണം",
+             "next", "next step", "what next", "what now"),
+    "repeat": ("വീണ്ടും പറയൂ", "ഒന്നുകൂടി പറയൂ", "വീണ്ടും പറയുക", "ആവർത്തിക്കൂ", "ഒന്നൂടെ പറയൂ", "repeat", "repeat that", "say that again", "say it again", "come again"),
+    "locate": ("എവിടെയാണ്", "ബട്ടൺ എവിടെയാണ്", "ഏത് ബട്ടൺ", "ഏത് ബട്ടണാണ്", "ഏത് നോബ്",
+               "where is it", "where is the button", "which button", "where is the control"),
+    "simplify": ("ലളിതമായി പറയൂ", "കുറച്ചുകൂടി ലളിതമായി പറയൂ", "എളുപ്പത്തിൽ പറയൂ",
+                 "simpler", "say it simply", "explain simply", "simplify"),
+    "explain": ("കുറച്ചുകൂടി വിശദമായി പറയൂ", "വിശദമായി പറയൂ", "ഒന്ന് വിശദീകരിക്കൂ",
+                "explain more", "more detail", "explain in detail", "tell me more"),
+    "stop": ("നിർത്തൂ", "നിർത്തുക", "നിർത്ത്", "ഇപ്പോൾ നിർത്തൂ", "മതി",
+             "stop", "cancel", "be quiet", "quiet", "shut up"),
+    "continue": ("സ്ഥിരീകരിക്കാതെ തുടരൂ", "സ്ഥിരീകരിക്കാതെ തുടരുക", "ഫോട്ടോ സ്ഥിരീകരണമില്ലാതെ തുടരൂ",
+                 "skip verification", "continue without checking"),
+    "reset": ("പുതിയ ദൗത്യം", "ദൗത്യം മായ്ക്കൂ", "ദൗത്യം പുനരാരംഭിക്കൂ",
+              "new task", "start over", "reset", "clear task"),
 }
 PHRASES = {phrase: action for action, words in VOICE_COMMANDS.items() for phrase in words}
 
 
 def intent(text):
-    normalized = unicodedata.normalize("NFC", text)
-    normalized = " ".join(normalized.strip(" .!?…,।\t\n").split())
+    normalized = unicodedata.normalize("NFC", text).casefold()
+    normalized = " ".join(normalized.strip(" \t\n\r.!?,;:'\"“”‘’()[]{}<>«»–—-।").split())
     return PHRASES.get(normalized, "query")
 
 
@@ -575,11 +588,15 @@ async def phone_ask(request: Request):
             action, text = "capture", ""
         debug["meta"].update(action=action, transcript=transcript, stt_language=stt_language) \
             if debug is not None else None
-        pending = rt.session.task and not rt.session.finished
-        if action in ("capture", "query") and not pending:
+        has_task = bool(rt.session.task and not rt.session.finished)
+        if action == "query" or (action == "capture" and not has_task):
             rt.phase = "ANSWERING"
+            task_ctx = None
+            if has_task:
+                task_ctx = {"active_task": rt.session.task,
+                            "pending_instruction": rt.session.public().get("current_instruction")}
             result, ms = await asyncio.to_thread(
-                rt.ai.answer, shot.jpeg, text, list(rt.phone_history))
+                rt.ai.answer, shot.jpeg, text, list(rt.phone_history), task_ctx)
             rt.check(revision)
             rt.metrics["vision_ms"] = ms
             if result.is_device_task:
@@ -681,6 +698,89 @@ async def debug_audio(record_id: str):
     return FileResponse(audio)
 
 
+TAILSCALE_NET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def pair_addresses():
+    found = []
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True,
+                             text=True, timeout=5).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 4 and parts[2] == "inet":
+                addr = parts[3].split("/")[0]
+                if not addr.startswith("127."):
+                    found.append(addr)
+    except Exception:
+        pass
+    if not found:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("8.8.8.8", 80))
+            found.append(sock.getsockname()[0])
+            sock.close()
+        except Exception:
+            pass
+    return found
+
+
+def pair_candidates():
+    port = os.getenv("PORT", "8000")
+    candidates = []
+    for addr in pair_addresses():
+        try:
+            label = "Tailscale" if ipaddress.ip_address(addr) in TAILSCALE_NET else "Wi-Fi/LAN"
+        except ValueError:
+            label = "Wi-Fi/LAN"
+        candidates.append((label, f"http://{addr}:{port}"))
+    public = os.getenv("PUBLIC_URL", "").strip()
+    if public:
+        candidates.insert(0, ("public", public.rstrip("/")))
+    return candidates
+
+
+def pair_link(base, token):
+    return "thirdeye://pair?" + urlencode({"url": base, "token": token})
+
+
+PAIR_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DrishtiGuide pairing</title>
+<style>body{background:#14181c;color:#e8ecef;font-family:sans-serif;max-width:640px;margin:24px auto;padding:0 16px}
+.card{background:#1e242b;border-radius:12px;padding:16px;margin:16px 0}
+svg{display:block;margin:12px auto;max-width:100%}
+code{display:block;background:#0d1117;padding:10px;border-radius:8px;word-break:break-all;margin:8px 0}
+.warn{color:#e8b64c}.btn{display:inline-block;background:#2e7d32;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-top:8px}</style></head>
+<body><h2>Pair your phone</h2>
+<p class="warn">This QR contains your access token; do not share the screen.</p>
+<p>Scan with your phone camera. If it does not open DrishtiGuide, copy the link text and tap Paste pairing link in the app.</p>
+__CARDS__
+</body></html>"""
+
+
+@app.get("/pair")
+async def pair_page():
+    token = os.getenv("PHONE_TOKEN", "")
+    if not token:
+        return HTMLResponse(PAIR_HTML.replace("__CARDS__",
+            "<p>PHONE_TOKEN is not set in .env — generate one and restart the server.</p>"))
+    cards = []
+    for label, base in pair_candidates():
+        link = pair_link(base, token)
+        try:
+            svg = segno.make(link, error="m").svg_inline(scale=4, border=2,
+                                                       dark="#e8ecef", light="#1e242b")
+        except Exception:
+            svg = ""
+        safe_base, safe_link = html.escape(base), html.escape(link)
+        cards.append(
+            f'<div class="card"><b>{html.escape(label)}</b><br><code>{safe_base}</code>'
+            f'<code>{safe_link}</code>{svg}'
+            f'<a class="btn" href="{safe_link}">Open in DrishtiGuide</a></div>')
+    return HTMLResponse(PAIR_HTML.replace("__CARDS__",
+        "".join(cards) or "<p>No network address found.</p>"))
+
+
 def host_binding_ok(host, token):
     return host in ("127.0.0.1", "localhost") or len(token or "") >= 24
 
@@ -695,6 +795,7 @@ if __name__ == "__main__":
                          "python -c \"import secrets;print(secrets.token_urlsafe(32))\"")
     if os.getenv("PHONE_TOKEN"):
         log.info("Phone API enabled at http://%s:%d/api/phone/ (bearer token required)", host, port)
+        log.info("Pair a phone: open http://127.0.0.1:%d/pair on this PC", port)
     else:
         log.info("Phone API disabled at http://%s:%d: PHONE_TOKEN is not set.", host, port)
     uvicorn.run(app, host=host, port=port, access_log=False)

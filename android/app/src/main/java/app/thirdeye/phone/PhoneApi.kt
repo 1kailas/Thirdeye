@@ -32,8 +32,13 @@ class PhoneApi(
             body.put("audio_b64", Base64.encodeToString(audioWav, Base64.NO_WRAP))
             body.put("audio_type", "audio/wav")
         }
-        val (code, text) = post("/api/phone/ask", body.toString().toByteArray(Charsets.UTF_8))
-            ?: return null
+        val payload = body.toString().toByteArray(Charsets.UTF_8)
+        var outcome = post("/api/phone/ask", payload)
+        if (outcome == null && connectFailed) {
+            Thread.sleep(700)
+            outcome = post("/api/phone/ask", payload)
+        }
+        val (code, text) = outcome ?: return null
         val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
         val debug = json.optJSONObject("debug")
         return AskResult(
@@ -63,8 +68,12 @@ class PhoneApi(
         }
     }
 
+    private var connectFailed = false
+
     private fun post(path: String, payload: ByteArray): Pair<Int, String>? {
+        connectFailed = false
         val connection = open(path) ?: return null
+        var responded = false
         try {
             connection.requestMethod = "POST"
             connection.doOutput = true
@@ -72,9 +81,13 @@ class PhoneApi(
             connection.setFixedLengthStreamingMode(payload.size)
             connection.outputStream.use { it.write(payload) }
             val code = connection.responseCode
+            responded = true
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             return code to readBody(stream)
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            connectFailed = !responded && (failure is java.net.ConnectException
+                || failure is java.net.UnknownHostException
+                || failure is java.net.SocketTimeoutException)
             return null
         } finally {
             connection.disconnect()

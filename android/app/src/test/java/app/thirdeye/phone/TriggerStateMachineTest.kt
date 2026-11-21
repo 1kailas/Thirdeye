@@ -160,6 +160,18 @@ class TriggerStateMachineTest {
     }
 
     @Test
+    fun cancelDuringSendingResetsToIdle() {
+        setup()
+        down()
+        assertEquals(listOf(TriggerStateMachine.SmAction.TakePhotoThenSend), up())
+        // Request stays in SENDING; the service watchdog uses cancel() to recover.
+        assertEquals(listOf(TriggerStateMachine.SmAction.CancelAll), sm.cancel())
+        // After reset a fresh press works normally.
+        down()
+        assertEquals(listOf(TriggerStateMachine.SmAction.TakePhotoThenSend), up())
+    }
+
+    @Test
     fun cancelClearsPendingTimers() {
         setup()
         down()

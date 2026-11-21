@@ -3,3 +3,4 @@ uvicorn>=0.34,<1
 pydantic>=2.10,<3
 requests>=2.32,<3
 Pillow>=11.2,<14
+segno>=1.6,<2

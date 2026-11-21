@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from camera import Camera, CameraError, Snapshot, jpeg_encode, validate_url
 from sarvam_client import SarvamClient, SarvamError
 from settings import load_environment
-from task_engine import Control, Guidance, ProposedStep, TaskSession, Verification
+from task_engine import Answer, Control, Guidance, ProposedStep, TaskSession, Verification
 
 
 def panel_jpeg(selected):
@@ -370,6 +370,45 @@ class SarvamTests(unittest.TestCase):
         with patch.object(self.ai.task_http, "post", return_value=answer):
             with self.assertRaisesRegex(SarvamError, "വീണ്ടും"):
                 self.ai.guide(panel_jpeg(False), {}, "inspect", "")
+
+    def test_vision_retries_once_then_succeeds(self):
+        bad = cloud_reply({"choices": [{"message": {"content": "{\"device_name\":\"washer\"}"}}]})
+        good = cloud_reply({"choices": [{"message": {"content": verdict().model_dump_json()}}]})
+        with patch.object(self.ai.task_http, "post", side_effect=[bad, good]) as post:
+            observed, _ = self.ai.verify(panel_jpeg(False), panel_jpeg(True),
+                                         {"expected_result": step().expected_result})
+        self.assertEqual(observed.verification_state, "VERIFIED")
+        self.assertEqual(post.call_count, 2)
+
+    def test_vision_two_bad_responses_raise(self):
+        bad = cloud_reply({"choices": [{"message": {"content": "{\"device_name\":\"washer\"}"}}]})
+        with patch.object(self.ai.task_http, "post", return_value=bad) as post:
+            with self.assertRaises(SarvamError):
+                self.ai.guide(panel_jpeg(False), {}, "inspect", "")
+        self.assertEqual(post.call_count, 2)
+
+    def test_vision_retries_on_length_finish(self):
+        truncated = cloud_reply({"choices": [{"finish_reason": "length",
+            "message": {"content": verdict().model_dump_json()}}]})
+        good = cloud_reply({"choices": [{"message": {"content": verdict().model_dump_json()}}]})
+        with patch.object(self.ai.task_http, "post", side_effect=[truncated, good]) as post:
+            observed, _ = self.ai.verify(panel_jpeg(False), panel_jpeg(True),
+                                         {"expected_result": step().expected_result})
+        self.assertEqual(observed.verification_state, "VERIFIED")
+        self.assertEqual(post.call_count, 2)
+
+    def test_vision_system_prompt_requests_compact_json(self):
+        marker = "single compact line"
+        payloads = [verdict().model_dump_json(), washer().model_dump_json(),
+                    Answer(is_device_task=False, answer_ml="ok").model_dump_json()]
+        replies = [cloud_reply({"choices": [{"message": {"content": p}}]}) for p in payloads]
+        with patch.object(self.ai.task_http, "post", side_effect=replies) as post:
+            self.ai.verify(panel_jpeg(False), panel_jpeg(True), {"expected_result": "x"})
+            self.assertIn(marker, post.call_args.kwargs["json"]["messages"][0]["content"])
+            self.ai.guide(panel_jpeg(False), {}, "inspect", "")
+            self.assertIn(marker, post.call_args.kwargs["json"]["messages"][0]["content"])
+            self.ai.answer(panel_jpeg(False), "q", [])
+            self.assertIn(marker, post.call_args.kwargs["json"]["messages"][0]["content"])
 
     def test_api_auth_model_and_timeout_errors(self):
         with patch.object(self.ai.task_http, "post", return_value=cloud_reply({"secret": self.ai.key}, 403)):

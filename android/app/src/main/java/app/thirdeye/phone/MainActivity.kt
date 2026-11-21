@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        findViewById<Button>(R.id.pastePairing).setOnClickListener { pastePairingLink() }
         findViewById<Button>(R.id.grantPermissions).setOnClickListener { requestPermissions() }
         findViewById<Button>(R.id.allowRestricted).setOnClickListener { openAppInfo() }
         findViewById<Button>(R.id.openAccessibility).setOnClickListener { openAccessibility() }
@@ -69,6 +70,41 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
         findViewById<Button>(R.id.testButton).setOnTouchListener(testTouch)
+        handlePairing(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairing(intent)
+    }
+
+    private fun pastePairingLink() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        val text = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
+        val pairing = PairingLink.parse(text)
+        if (pairing == null) {
+            say("No pairing link found on the clipboard. Copy the link text from the pairing page first.")
+            return
+        }
+        serverUrl.setText(pairing.baseUrl)
+        token.setText(pairing.token)
+        persist()
+        say("Paired with your computer. Tap Start service.")
+    }
+
+    private fun handlePairing(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "thirdeye") return
+        val pairing = PairingLink.parse(data.toString())
+        if (pairing == null) {
+            say("Pairing link is invalid. Scan the QR code on the computer again.")
+            return
+        }
+        serverUrl.setText(pairing.baseUrl)
+        token.setText(pairing.token)
+        persist()
+        say("Paired with your computer. Tap Start service.")
     }
 
     override fun onResume() {
