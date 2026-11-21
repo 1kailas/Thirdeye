@@ -1,20 +1,31 @@
 """Local FastAPI server and the DrishtiGuide interaction controller."""
 
 import asyncio
+import base64
+import binascii
+import hmac
+import json
 import logging
 import os
+import re
+import shutil
 import unicodedata
+from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime
+from io import BytesIO
 from pathlib import Path
+from time import perf_counter
 from typing import Literal
+from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from camera import DEFAULT_URL, Camera, CameraError
+from camera import DEFAULT_URL, Camera, CameraError, Snapshot, jpeg_encode
 from sarvam_client import SarvamClient, SarvamError
 from settings import load_environment
 from task_engine import TaskSession, malayalam
@@ -78,10 +89,14 @@ class Runtime:
         self.quality = int(os.getenv("JPEG_QUALITY", "82"))
         if rotation not in (0, 90, 180, 270) or not 320 <= self.width <= 2560 or not 40 <= self.quality <= 95:
             raise ValueError("Check CAMERA_ROTATION, IMAGE_MAX_WIDTH and JPEG_QUALITY in .env.")
-        self.camera = Camera(os.getenv("CAMERA_URL", DEFAULT_URL), rotation)
+        camera_url = os.getenv("CAMERA_URL", DEFAULT_URL)
+        self.camera_enabled = camera_url.strip().lower() not in ("", "off", "none")
+        self.camera = Camera(camera_url if self.camera_enabled else DEFAULT_URL, rotation)
         self.ai = SarvamClient()
         self.session = TaskSession()
         self.revision = 0
+        self.phone_seq = 0
+        self.phone_history = deque(maxlen=2)
         self.busy = False
         self.phase = None
         self.error = None
@@ -108,7 +123,7 @@ class Runtime:
                     ai_ready=bool(self.ai.key), revision=self.revision,
                     session=self.session.public(), metrics=self.metrics)
 
-    async def run(self, action, text, crop, revision):
+    async def run(self, action, text, crop, revision, shot=None):
         task = self.session
         if action == "repeat":
             return task.response or "ആദ്യം ഒരു ചിത്രം എടുക്കുക."
@@ -127,7 +142,7 @@ class Runtime:
                 return task.without_visual_verification()
             return "ഈ ഘട്ടത്തിൽ പുതിയ ചിത്രം എടുത്ത് മാറ്റം പരിശോധിക്കുക."
         if action == "verify":
-            return await self.verify(task, crop, revision)
+            return await self.verify(task, crop, revision, shot)
         if action == "next" and (task.finished or not task.task or (task.step and not task.closed_step)):
             if task.finished:
                 return "ഈ ദൗത്യം പൂർത്തിയായി. പുതിയ ദൗത്യത്തിനായി എന്ത് ചെയ്യണമെന്ന് പറയുക."
@@ -146,7 +161,7 @@ class Runtime:
         capture = action == "capture" or task.latest is None
         # After a step without a usable after-image, base the next instruction on a new view.
         capture = capture or (action == "next" and task.verification == "UNAVAILABLE")
-        shot = await self.capture(crop, revision) if capture else task.latest
+        shot = shot or (await self.capture(crop, revision) if capture else task.latest)
         context = task.context()
         self.phase = "ANALYZING"
         reply, ms = await asyncio.to_thread(self.ai.guide, shot.jpeg, context, mode, text)
@@ -164,13 +179,13 @@ class Runtime:
                  snap.capture_ms, snap.jpeg_ms, snap.frame_age_ms)
         return snap
 
-    async def verify(self, task, crop, revision):
+    async def verify(self, task, crop, revision, shot=None):
         if not task.step or task.closed_step:
             return "പരിശോധിക്കാൻ ഇപ്പോൾ ചെയ്യേണ്ട ഒരു ഘട്ടമില്ല."
         if not task.step.visually_verifiable:
             return "ഈ മാറ്റം ഫോട്ടോയിൽ പരിശോധിക്കാനാവില്ല. ചെയ്തുകഴിഞ്ഞാൽ സ്ഥിരീകരിക്കാതെ തുടരുക."
         before = task.baseline
-        after = await self.capture(crop, revision, fresh=True)
+        after = shot or await self.capture(crop, revision, fresh=True)
         if after.number <= before.number or after.jpeg == before.jpeg:
             return task.uncertain()
         self.phase = "VERIFYING"
@@ -190,7 +205,8 @@ class Runtime:
 @asynccontextmanager
 async def lifespan(app):
     runtime = app.state.runtime = Runtime()
-    runtime.camera.start()
+    if runtime.camera_enabled:
+        runtime.camera.start()
     try:
         yield
     finally:
@@ -199,16 +215,20 @@ async def lifespan(app):
 
 
 app = FastAPI(title="DrishtiGuide AI", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
 
 @app.middleware("http")
 async def local_only(request: Request, call_next):
-    if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
-        return Response(status_code=403)
-    origin = request.headers.get("origin")
-    if origin and origin != f"{request.url.scheme}://{request.url.netloc}":
-        return Response(status_code=403)
+    if not request.url.path.startswith("/api/phone/"):
+        client = request.client.host if request.client else ""
+        host = urlsplit("//" + request.headers.get("host", "")).hostname or ""
+        if client not in ("127.0.0.1", "::1") or host not in ("localhost", "127.0.0.1"):
+            return Response(status_code=403)
+        if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
+            return Response(status_code=403)
+        origin = request.headers.get("origin")
+        if origin and origin != f"{request.url.scheme}://{request.url.netloc}":
+            return Response(status_code=403)
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -263,7 +283,7 @@ def service_failure(rt, revision, exc):
     return JSONResponse({"detail": rt.error, "state": "ERROR"}, status_code=503)
 
 
-async def execute(rt, action, text, crop, *, audio=None, content_type=None):
+async def execute(rt, action, text, crop, *, audio=None, content_type=None, shot=None):
     if action in ("stop", "reset"):
         message = await rt.run(action, text, crop, rt.revision)
         rt.session.respond(message)
@@ -283,7 +303,7 @@ async def execute(rt, action, text, crop, *, audio=None, content_type=None):
             rt.check(revision)
             rt.metrics["stt_ms"] = ms
             action, text = intent(transcript), transcript
-        message = await rt.run(action, text, crop, revision)
+        message = await rt.run(action, text, crop, revision, shot)
         rt.session.respond(message)
     except (CameraError, SarvamError) as exc:
         return service_failure(rt, revision, exc)
@@ -336,9 +356,345 @@ async def speech(payload: SpeechRequest, request: Request):
     })
 
 
+PHONE_SHOT_BASE = 1_000_000
+PHONE_BODY_LIMIT = 10_000_000
+PHONE_IMAGE_LIMIT = 6_000_000
+PHONE_AUDIO_LIMIT = 3_000_000
+PHONE_MAX_PIXELS = 16_000_000
+PHONE_AUDIO_TYPES = {"audio/wav", "audio/mp4", "audio/webm", "audio/ogg"}
+PHONE_UNAUTHORIZED = {"ok": False, "reply": "അംഗീകൃത ആക്‌സസ് കോഡ് നൽകുക.",
+                      "transcript": None, "audio_b64": None, "audio_type": "audio/mpeg",
+                      "debug": {}}
+
+
+def phone_allowed(request):
+    token = os.getenv("PHONE_TOKEN", "")
+    authorization = request.headers.get("authorization", "")
+    return (bool(token) and authorization.startswith("Bearer ")
+            and hmac.compare_digest(authorization[7:].encode(), token.encode()))
+
+
+def phone_speech(text):
+    if len(text) > 700:
+        head = text[:700]
+        boundary = max(head.rfind("।"), head.rfind(". "))
+        if boundary > 200:
+            head = head[:boundary + 1]
+        else:
+            space = head.rfind(" ")
+            head = head[:space] if space > 200 else head
+        text = head.strip()
+    return text if malayalam(text) else None
+
+
+async def phone_clip(rt, text):
+    spoken = phone_speech(text)
+    if spoken is None:
+        return None
+    try:
+        started = perf_counter()
+        async with rt.speech_lock:
+            clip, _, _ = await asyncio.to_thread(rt.ai.speak, spoken)
+        rt.metrics["tts_ms"] = round((perf_counter() - started) * 1000, 1)
+        return base64.b64encode(clip).decode("ascii")
+    except Exception:
+        return None
+
+
+PHONE_DEBUG_LIMIT = 30
+PHONE_DEBUG_ID = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}")
+PHONE_AUDIO_EXT = {"audio/wav": "wav", "audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg"}
+phone_debug_records = deque(maxlen=PHONE_DEBUG_LIMIT)
+
+
+def phone_debug_enabled():
+    return os.getenv("PHONE_DEBUG", "1") != "0"
+
+
+def phone_debug_timings(rt, record):
+    metrics = rt.metrics or {}
+    return {"stt": metrics.get("stt_ms"), "vision": metrics.get("vision_ms"),
+            "tts": metrics.get("tts_ms"),
+            "total": round((perf_counter() - record["started"]) * 1000, 1)}
+
+
+def phone_debug_public(record):
+    if record is None:
+        return {}
+    meta = record["meta"]
+    return {"action": meta.get("action"), "route": meta.get("route"),
+            "transcript_language": meta.get("stt_language"),
+            "timings_ms": meta.get("timings_ms") or {}}
+
+
+def phone_debug_start(jpeg, audio, audio_type, *, image_size, audio_seconds):
+    if not phone_debug_enabled():
+        return None
+    stamp = datetime.now()
+    record_id = stamp.strftime("%Y%m%d-%H%M%S-%f")[:-3]
+    directory = Path("debug") / record_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "image.jpg").write_bytes(jpeg)
+    if audio is not None:
+        (directory / f"audio.{PHONE_AUDIO_EXT.get(audio_type, 'bin')}").write_bytes(audio)
+    record = {"id": record_id, "time": stamp.isoformat(timespec="milliseconds"),
+              "dir": directory, "started": perf_counter(),
+              "meta": {"ok": None, "http_status": None, "action": None, "route": "error",
+                       "transcript": None, "stt_language": None, "reply": None, "error": None,
+                       "timings_ms": {}, "image_bytes": len(jpeg),
+                       "audio_bytes": len(audio) if audio is not None else 0,
+                       "image_size": image_size, "audio_seconds": audio_seconds}}
+    phone_debug_records.append(record)
+    root = Path("debug")
+    if root.is_dir():
+        for old in sorted(p for p in root.iterdir() if p.is_dir())[:-PHONE_DEBUG_LIMIT]:
+            shutil.rmtree(old, ignore_errors=True)
+    return record
+
+
+def phone_debug_finish(record, **fields):
+    if record is None:
+        return
+    record["meta"].update(fields)
+    meta = {"id": record["id"], "time": record["time"], **record["meta"]}
+    (record["dir"] / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def phone_debug_find(record_id):
+    if not PHONE_DEBUG_ID.fullmatch(record_id):
+        return None
+    return next((record for record in phone_debug_records if record["id"] == record_id), None)
+
+
+def wav_seconds(data):
+    if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    rate = int.from_bytes(data[24:28], "little")
+    size = int.from_bytes(data[40:44], "little")
+    return round(size / (rate * 2), 2) if rate else None
+
+
+async def phone_fail(rt, status, message, transcript=None, debug=None):
+    if debug is not None:
+        phone_debug_finish(debug, ok=False, http_status=status, reply=message, error=message,
+                           timings_ms=phone_debug_timings(rt, debug))
+    return JSONResponse({"ok": False, "reply": message, "transcript": transcript,
+                         "audio_b64": await phone_clip(rt, message),
+                         "audio_type": "audio/mpeg", "debug": phone_debug_public(debug)},
+                        status_code=status)
+
+
+def phone_decode(data):
+    try:
+        return base64.b64decode("".join(data.split()), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+
+
+@app.get("/api/phone/ping")
+async def phone_ping(request: Request):
+    if not phone_allowed(request):
+        return JSONResponse(PHONE_UNAUTHORIZED, status_code=401)
+    return {"ok": True, "ai_ready": bool(request.app.state.runtime.ai.key)}
+
+
+@app.post("/api/phone/ask")
+async def phone_ask(request: Request):
+    rt = request.app.state.runtime
+    if not phone_allowed(request):
+        return JSONResponse(PHONE_UNAUTHORIZED, status_code=401)
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > PHONE_BODY_LIMIT:
+            return await phone_fail(rt, 413, "അഭ്യർത്ഥന വളരെ വലുതാണ്. ചെറുതാക്കി വീണ്ടും ശ്രമിക്കുക.")
+        body.extend(chunk)
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict):
+        return await phone_fail(rt, 400, "അഭ്യർത്ഥന വായിക്കാനായില്ല. വീണ്ടും ശ്രമിക്കുക.")
+    image_b64 = payload.get("image_b64")
+    audio_b64 = payload.get("audio_b64")
+    audio_type = payload.get("audio_type")
+    if not isinstance(image_b64, str) or not image_b64.strip():
+        return await phone_fail(rt, 400, "ഫോട്ടോ ലഭിച്ചില്ല. വീണ്ടും എടുക്കുക.")
+    jpeg_data = phone_decode(image_b64)
+    if jpeg_data is None:
+        return await phone_fail(rt, 400, "ഫോട്ടോ അയയ്ക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.")
+    if not jpeg_data:
+        return await phone_fail(rt, 400, "ശരിയായ ഫോട്ടോ ലഭിച്ചില്ല. വീണ്ടും എടുക്കുക.")
+    if len(jpeg_data) > PHONE_IMAGE_LIMIT:
+        return await phone_fail(rt, 413, "ഫോട്ടോ വളരെ വലുതാണ്. ചെറുതാക്കി വീണ്ടും എടുക്കുക.")
+    try:
+        with Image.open(BytesIO(jpeg_data)) as source:
+            if source.format != "JPEG":
+                return await phone_fail(rt, 400, "ശരിയായ ഫോട്ടോ ലഭിച്ചില്ല. വീണ്ടും എടുക്കുക.")
+            if source.width * source.height > PHONE_MAX_PIXELS:
+                return await phone_fail(rt, 400, "ഫോട്ടോ വളരെ വലുതാണ്. ചെറുതാക്കി വീണ്ടും എടുക്കുക.")
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.load()
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
+        return await phone_fail(rt, 400, "ശരിയായ ഫോട്ടോ ലഭിച്ചില്ല. വീണ്ടും എടുക്കുക.")
+    audio = None
+    if audio_b64 is not None:
+        if not isinstance(audio_type, str) or audio_type not in PHONE_AUDIO_TYPES:
+            return await phone_fail(rt, 400, "ഈ റെക്കോർഡിങ് ഫോർമാറ്റ് പിന്തുണയ്ക്കുന്നില്ല.")
+        if not isinstance(audio_b64, str):
+            return await phone_fail(rt, 400, "ശബ്ദം അയയ്ക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.")
+        audio = phone_decode(audio_b64)
+        if audio is None:
+            return await phone_fail(rt, 400, "ശബ്ദം അയയ്ക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.")
+        if not audio:
+            return await phone_fail(rt, 400, "ശബ്ദം റെക്കോർഡ് ചെയ്തില്ല. വീണ്ടും സംസാരിക്കുക.")
+        if len(audio) > PHONE_AUDIO_LIMIT:
+            return await phone_fail(rt, 413, "റെക്കോർഡിങ് വളരെ വലുതാണ്. ചുരുക്കി വീണ്ടും സംസാരിക്കുക.")
+    rt.phone_seq += 1
+    shot = Snapshot(PHONE_SHOT_BASE + rt.phone_seq,
+                    jpeg_encode(image, rt.width, rt.quality), 0.0, 0.0, 0.0)
+    debug = phone_debug_start(shot.jpeg, audio, audio_type,
+                              image_size=f"{image.width}x{image.height}",
+                              audio_seconds=wav_seconds(audio) if audio_type == "audio/wav" else None)
+    if rt.busy:
+        return await phone_fail(rt, 409, "മുൻ അഭ്യർത്ഥന തീരുന്നതുവരെ കാത്തിരിക്കുക.", debug=debug)
+    rt.busy, rt.error = True, None
+    revision = rt.revision
+    rt.metrics = {}
+    transcript = None
+    action = route = stt_language = None
+    try:
+        if audio is not None:
+            rt.phase = "TRANSCRIBING"
+            transcript, ms = await asyncio.to_thread(rt.ai.transcribe, audio, audio_type)
+            rt.check(revision)
+            rt.metrics["stt_ms"] = ms
+            stt_language = rt.ai.last_language
+            action, text = intent(transcript), transcript
+        else:
+            action, text = "capture", ""
+        debug["meta"].update(action=action, transcript=transcript, stt_language=stt_language) \
+            if debug is not None else None
+        pending = rt.session.task and not rt.session.finished
+        if action in ("capture", "query") and not pending:
+            rt.phase = "ANSWERING"
+            result, ms = await asyncio.to_thread(
+                rt.ai.answer, shot.jpeg, text, list(rt.phone_history))
+            rt.check(revision)
+            rt.metrics["vision_ms"] = ms
+            if result.is_device_task:
+                route = "guide"
+                message = await rt.run(action, text, Crop(), revision, shot)
+            else:
+                route = "general"
+                message = result.answer_ml
+            rt.session.respond(message)
+            if route == "general":
+                rt.phone_history.append({"question": text[:220], "answer": message[:280]})
+        else:
+            route = "guide"
+            message = await rt.run(action, text, Crop(), revision, shot)
+            rt.session.respond(message)
+        clip = await phone_clip(rt, message)
+    except (CameraError, SarvamError) as exc:
+        if debug is not None:
+            debug["meta"].update(route=route or "error")
+        return await phone_fail(rt, 503, str(exc), transcript, debug=debug)
+    except HTTPException as exc:
+        if debug is not None:
+            debug["meta"].update(route=route or "error")
+        return await phone_fail(rt, exc.status_code, str(exc.detail), transcript, debug=debug)
+    finally:
+        rt.busy, rt.phase = False, None
+    if debug is not None:
+        debug["meta"].update(ok=True, http_status=200, route=route, reply=message, error=None,
+                             timings_ms=phone_debug_timings(rt, debug))
+        phone_debug_finish(debug)
+    return JSONResponse({"ok": True, "reply": message, "transcript": transcript,
+                         "audio_b64": clip, "audio_type": "audio/mpeg",
+                         "debug": phone_debug_public(debug)})
+
+
+DEBUG_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>DrishtiGuide debug</title>
+<style>body{background:#14181c;color:#e8ecef;font-family:sans-serif;margin:16px}
+.card{background:#1e242b;border-radius:10px;padding:12px;margin:12px 0}
+img{max-width:220px;border-radius:6px;cursor:zoom-in}
+.meta{font-size:13px;line-height:1.5}.reply{color:#9fd3a8}.err{color:#e08f8f}
+audio{width:100%;margin-top:6px}a{color:#8ab4f8}</style></head>
+<body><h2>Phone requests</h2><div id="list">loading…</div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function load(){
+  const items=await (await fetch('/api/debug/items')).json();
+  document.getElementById('list').innerHTML=items.map(m=>{
+    const t=m.timings_ms||{};
+    return `<div class="card"><a href="/api/debug/${m.id}/image" target="_blank"><img src="/api/debug/${m.id}/image" loading="lazy"></a>
+    <div class="meta"><b>${esc(m.time)}</b> · ${esc(m.action)} · route=${esc(m.route)} · http ${m.http_status} · ok=${m.ok}
+    ${m.stt_language?` · stt=${esc(m.stt_language)}`:''}<br>
+    transcript: ${esc(m.transcript)}<br>
+    reply: <span class="reply">${esc(m.reply)}</span>
+    ${m.error?`<br><span class="err">${esc(m.error)}</span>`:''}
+    <br>timings: stt=${t.stt??'-'} vision=${t.vision??'-'} tts=${t.tts??'-'} total=${t.total??'-'} ms
+    · image ${m.image_bytes}B ${esc(m.image_size)}${m.audio_bytes?` · audio ${m.audio_bytes}B${m.audio_seconds!=null?` (${m.audio_seconds}s)`:''}`:''}</div>
+    ${m.audio_file?`<audio controls src="/api/debug/${m.id}/audio"></audio>`:''}</div>`;
+  }).join('')||'no requests yet';
+}
+load();setInterval(load,5000);
+</script></body></html>"""
+
+
+@app.get("/debug")
+async def debug_page():
+    if not phone_debug_enabled():
+        raise HTTPException(404)
+    return HTMLResponse(DEBUG_HTML)
+
+
+@app.get("/api/debug/items")
+async def debug_items():
+    if not phone_debug_enabled():
+        raise HTTPException(404)
+    items = []
+    for record in reversed(phone_debug_records):
+        audio = next(record["dir"].glob("audio.*"), None)
+        items.append(dict(record["meta"], id=record["id"], time=record["time"],
+                          audio_file=audio.name if audio else None))
+    return items
+
+
+@app.get("/api/debug/{record_id}/image")
+async def debug_image(record_id: str):
+    record = phone_debug_find(record_id)
+    if record is None or not phone_debug_enabled():
+        raise HTTPException(404)
+    return FileResponse(record["dir"] / "image.jpg")
+
+
+@app.get("/api/debug/{record_id}/audio")
+async def debug_audio(record_id: str):
+    record = phone_debug_find(record_id)
+    if record is None or not phone_debug_enabled():
+        raise HTTPException(404)
+    audio = next(record["dir"].glob("audio.*"), None)
+    if audio is None:
+        raise HTTPException(404)
+    return FileResponse(audio)
+
+
+def host_binding_ok(host, token):
+    return host in ("127.0.0.1", "localhost") or len(token or "") >= 24
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     host = os.getenv("HOST", "127.0.0.1")
-    if host not in ("127.0.0.1", "localhost"):
-        raise SystemExit("Set HOST to 127.0.0.1 or localhost.")
-    uvicorn.run(app, host=host, port=int(os.getenv("PORT", "8000")), access_log=False)
+    port = int(os.getenv("PORT", "8000"))
+    if not host_binding_ok(host, os.getenv("PHONE_TOKEN", "")):
+        raise SystemExit("HOST other than 127.0.0.1 or localhost requires PHONE_TOKEN of at least "
+                         "24 characters in .env. Generate one with: "
+                         "python -c \"import secrets;print(secrets.token_urlsafe(32))\"")
+    if os.getenv("PHONE_TOKEN"):
+        log.info("Phone API enabled at http://%s:%d/api/phone/ (bearer token required)", host, port)
+    else:
+        log.info("Phone API disabled at http://%s:%d: PHONE_TOKEN is not set.", host, port)
+    uvicorn.run(app, host=host, port=port, access_log=False)

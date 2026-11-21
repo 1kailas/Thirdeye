@@ -87,7 +87,8 @@ class Camera:
         with self.changed:
             self.closed = True
             self.changed.notify_all()
-        self.worker.join(timeout=4)
+        if self.worker.ident is not None:
+            self.worker.join(timeout=4)
 
     def configure(self, action, url=None, rotation=None):
         url = validate_url(url) if url is not None else None

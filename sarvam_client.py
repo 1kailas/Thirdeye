@@ -10,7 +10,7 @@ from time import perf_counter
 import requests
 from pydantic import ValidationError
 
-from task_engine import Guidance, SYSTEM, Verification, VERIFY_SYSTEM
+from task_engine import ANSWER_SYSTEM, Answer, Guidance, SYSTEM, Verification, VERIFY_SYSTEM
 
 log = logging.getLogger("drishtiguide")
 
@@ -52,6 +52,7 @@ class SarvamClient:
         self.fallback_model = os.getenv("VISION_FALLBACK_MODEL", "glm5.3-flash")
         self.stt_model = os.getenv("STT_MODEL", "saaras:v4")
         self.language = os.getenv("LANGUAGE_CODE", "ml-IN")
+        self.last_language = None
         self.tts_model = os.getenv("TTS_MODEL", "bulbul:v4-flash")
         default_voice = "simran" if self.tts_model == "bulbul:v3" else "simran_en_customer"
         self.voice = os.getenv("TTS_VOICE", default_voice)
@@ -123,6 +124,10 @@ class SarvamClient:
         return self._vision(Verification, VERIFY_SYSTEM, context,
                             [("before", before), ("after", after)])
 
+    def answer(self, image, question, history):
+        request = {"user_question": question or "", "recent": history}
+        return self._vision(Answer, ANSWER_SYSTEM, request, [("current image", image)])
+
     def _vision(self, schema, system, request, images):
         content = [{"type": "text", "text": json.dumps(request, ensure_ascii=False)}]
         for name, jpeg in images:
@@ -155,6 +160,7 @@ class SarvamClient:
                                         "model": self.stt_model, "language_code": self.language,
                                         "mode": "transcribe",
                                     }, files={"file": ("command." + suffix[content_type], audio, content_type)})
+        self.last_language = data.get("language_code") if isinstance(data, dict) else None
         text = data.get("transcript") if isinstance(data, dict) else None
         if not isinstance(text, str) or not text.strip():
             raise SarvamError("പറഞ്ഞത് തിരിച്ചറിയാനായില്ല. വീണ്ടും സംസാരിക്കുക.")
