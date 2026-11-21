@@ -1,6 +1,6 @@
 # Browser UI (optional)
 
-The original DrishtiGuide interface is a single-page browser app served by the same FastAPI process at `http://127.0.0.1:8000`. It uses an IP Webcam stream (or the phone client) for photos and dictation from the laptop microphone. The phone client in the main README is the recommended experience; this page documents the browser UI.
+Open `http://127.0.0.1:8000` on the server computer to inspect phone activity. Select a request to see the submitted photo, Malayalam reply and processing times. Voice requests also include the original recording. The **Camera workspace** link opens the IP Webcam preview, manual capture and laptop dictation controls at `/workspace`.
 
 ## Setup on EndeavourOS / Arch Linux
 
@@ -28,7 +28,7 @@ The simplest setup uses the phone client below and needs no IP Webcam stream. Fo
    ./run.sh
    ```
 
-5. Open `http://127.0.0.1:8000` in Firefox or Chromium. Activate **തുടങ്ങാൻ സഹായം കേൾക്കുക** to hear the camera status and how to start. Allow microphone access if you choose to dictate a question or command.
+5. Open `http://127.0.0.1:8000/workspace` in Firefox or Chromium. Activate **തുടങ്ങാൻ സഹായം കേൾക്കുക** to hear the camera status and how to start. Allow microphone access if you choose to dictate a question or command.
 
 After setup, you can also launch with `.venv/bin/python app.py`.
 

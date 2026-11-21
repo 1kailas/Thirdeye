@@ -226,11 +226,11 @@ Finger on '5' (row 3, col 2):  "Move one key left and two rows down."
 - It remembers the last target, so *"and now?"* after you move your finger keeps guiding to the same key.
 - It refuses to guess: unreadable, rotated or cut-off photos produce a request for a better picture.
 - On our synthetic remote, 9 of 9 live runs returned the correct grid and the correct sentence, and an absent key (*"volume up"*) was reported as not found.
-- The grid is shown on the `/debug` page, so you can see exactly what the model saw.
+- Open **Detected key layout** in the dashboard to inspect the model’s button map.
 
 <p align="center">
-  <img src="docs/images/debug-page.png" alt="The debug page showing a photo, the key grid with the target highlighted, the transcript, the reply and timings" width="560">
-  <br><em>The <code>/debug</code> page: uploaded photo, key grid (target in green, finger outlined), transcript, reply and timings. The remote is a synthetic test image.</em>
+  <img src="docs/images/debug-page.png" alt="Phone activity dashboard with a selected button-location request and its Malayalam reply" width="560">
+  <br><em>Phone activity dashboard with example requests and a remote-control photo.</em>
 </p>
 
 ## Speed
@@ -277,7 +277,7 @@ All settings live in `.env` (copy `.env.example`). Environment variables set bef
 | `PHONE_DEBUG` | `1` | Keep the `debug/` archive and `/debug` page. |
 | `PUBLIC_URL` | none | Extra address to offer on the `/pair` page. |
 
-An optional browser UI (laptop camera or IP Webcam stream, typed or dictated questions) is still included. See [docs/BROWSER_UI.md](docs/BROWSER_UI.md).
+Open **[Phone activity](http://127.0.0.1:8000/)** on the server computer to inspect saved photos, Malayalam replies, voice questions and request timings. Use **Camera workspace** for IP Webcam capture and typed or dictated questions. [Browser guide](docs/BROWSER_UI.md)
 
 ## Security, privacy and safety
 
@@ -305,7 +305,8 @@ app.py              FastAPI server: phone API, routing, streaming, debug and pai
 task_engine.py      Schemas, prompts, task state, locate composer (Malayalam sentences)
 sarvam_client.py    Sarvam REST client (STT, vision, TTS) with retries and structured output
 camera.py           Optional IP Webcam reader (CAMERA_URL=off for phone-only)
-index.html          Optional browser UI
+index.html          Local phone activity dashboard
+dashboard/          Dashboard assets and camera workspace
 android/            Kotlin app: service, key filter, state machine, audio queue, Material 3 UI
 tests/              Offline server tests
 scripts/            Benchmarks and a synthetic remote generator

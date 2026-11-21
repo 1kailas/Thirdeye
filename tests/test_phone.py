@@ -3,10 +3,10 @@
 import base64
 import json
 import os
-import shutil
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, chdir
 from io import BytesIO
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from PIL import Image
@@ -50,6 +50,7 @@ def photo_payload(**changes):
 class PhoneTests(unittest.TestCase):
     def setUp(self):
         self.stack = ExitStack()
+        self.stack.enter_context(chdir(self.stack.enter_context(TemporaryDirectory())))
         self.stack.enter_context(patch.dict(os.environ, {"CAMERA_URL": "off", "PHONE_TOKEN": TEST_TOKEN}))
         self.client = TestClient(server.app, base_url="http://localhost:8000",
                                  client=("127.0.0.1", 4321))
@@ -66,8 +67,6 @@ class PhoneTests(unittest.TestCase):
         self.answer.side_effect = lambda *args: (Answer(is_device_task=True, wants_location=False, answer_ml="ok"), 1.0)
 
     def tearDown(self):
-        for record in list(server.phone_debug_records):
-            shutil.rmtree(record["dir"], ignore_errors=True)
         server.phone_debug_records.clear()
 
     def ask(self, payload, token=TEST_TOKEN):
@@ -400,7 +399,7 @@ class PhoneTests(unittest.TestCase):
         self.assertTrue(image.content.startswith(b"\xff\xd8"))
         page = self.client.get("/debug")
         self.assertEqual(page.status_code, 200)
-        self.assertIn("Phone requests", page.text)
+        self.assertIn("Phone activity", page.text)
         self.assertEqual(self.client.get("/api/debug/20200101-000000-000/image").status_code, 404)
         self.assertEqual(self.client.get("/api/debug/not-an-id/image").status_code, 404)
         self.assertEqual(self.client.get("/api/debug/20200101-000000-000/audio").status_code, 404)
@@ -450,6 +449,7 @@ class PhoneTests(unittest.TestCase):
 class PhoneBindingTests(unittest.TestCase):
     def setUp(self):
         self.stack = ExitStack()
+        self.stack.enter_context(chdir(self.stack.enter_context(TemporaryDirectory())))
         self.stack.enter_context(patch.dict(os.environ, {"CAMERA_URL": "off", "PHONE_TOKEN": TEST_TOKEN}))
         self.client = TestClient(server.app, base_url="http://localhost:8000",
                                  client=("127.0.0.1", 4321))

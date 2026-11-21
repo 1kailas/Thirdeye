@@ -26,6 +26,7 @@ from urllib.parse import quote, urlencode, urlsplit
 import uvicorn
 import segno
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
@@ -220,6 +221,7 @@ class Runtime:
 @asynccontextmanager
 async def lifespan(app):
     runtime = app.state.runtime = Runtime()
+    restore_phone_history()
     if runtime.camera_enabled:
         runtime.camera.start()
     try:
@@ -255,6 +257,19 @@ async def local_only(request: Request, call_next):
 @app.get("/")
 async def index():
     return FileResponse(ROOT / "index.html", media_type="text/html")
+
+
+@app.get("/workspace")
+async def browser_workspace():
+    return FileResponse(ROOT / "dashboard" / "workspace.html", media_type="text/html")
+
+
+@app.get("/dashboard-font.woff2")
+async def dashboard_font():
+    return FileResponse(ROOT / "docs" / "site-assets" / "bricolage.woff2", media_type="font/woff2")
+
+
+app.mount("/dashboard-assets", StaticFiles(directory=ROOT / "dashboard" / "assets"), name="dashboard-assets")
 
 
 @app.get("/api/status")
@@ -502,6 +517,25 @@ def phone_debug_public(record):
             "timings_ms": meta.get("timings_ms") or {}}
 
 
+def restore_phone_history():
+    phone_debug_records.clear()
+    if not phone_debug_enabled():
+        return
+    paths = sorted(p for p in Path("debug").glob("*/meta.json")
+                   if PHONE_DEBUG_ID.fullmatch(p.parent.name))
+    for path in paths[-PHONE_DEBUG_LIMIT:]:
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(meta, dict) or meta.get("id") != path.parent.name:
+                continue
+            if not isinstance(meta.get("time"), str) or not (path.parent / "image.jpg").is_file():
+                continue
+            phone_debug_records.append({"id": meta["id"], "time": meta["time"],
+                                        "dir": path.parent, "meta": meta})
+        except (OSError, UnicodeError, ValueError):
+            continue
+
+
 def phone_debug_start(jpeg, audio, audio_type, *, image_size, audio_seconds):
     if not phone_debug_enabled():
         return None
@@ -710,42 +744,11 @@ async def phone_ask(request: Request):
                          "debug": phone_debug_public(debug)})
 
 
-DEBUG_HTML = """<!doctype html><html><head><meta charset="utf-8"><title>DrishtiGuide debug</title>
-<style>body{background:#14181c;color:#e8ecef;font-family:sans-serif;margin:16px}
-.card{background:#1e242b;border-radius:10px;padding:12px;margin:12px 0}
-img{max-width:220px;border-radius:6px;cursor:zoom-in}
-.meta{font-size:13px;line-height:1.5}.reply{color:#9fd3a8}.err{color:#e08f8f}
-audio{width:100%;margin-top:6px}a{color:#8ab4f8}
-.grid{border-collapse:collapse;margin-top:8px}.grid td{border:1px solid #445;padding:4px 10px;text-align:center}.tgt{background:#2e7d32}.fng{outline:2px solid #f2b544}</style></head>
-<body><h2>Phone requests</h2><div id="list">loading…</div>
-<script>
-const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const grid=l=>l&&l.rows?`<table class="grid">${l.rows.map((row,r)=>`<tr>${row.map((k,c)=>`<td class="${r+1==l.target_row&&c+1==l.target_col?'tgt':''} ${l.finger_visible&&r+1==l.finger_row&&c+1==l.finger_col?'fng':''}">${esc(k)||'·'}</td>`).join('')}</tr>`).join('')}</table>`:'';
-async function load(){
-  const items=await (await fetch('/api/debug/items')).json();
-  document.getElementById('list').innerHTML=items.map(m=>{
-    const t=m.timings_ms||{};
-    return `<div class="card"><a href="/api/debug/${m.id}/image" target="_blank"><img src="/api/debug/${m.id}/image" loading="lazy"></a>
-    <div class="meta"><b>${esc(m.time)}</b> · ${esc(m.action)} · route=${esc(m.route)} · http ${m.http_status} · ok=${m.ok}
-    ${m.stt_language?` · stt=${esc(m.stt_language)}`:''}<br>
-    transcript: ${esc(m.transcript)}<br>
-    reply: <span class="reply">${esc(m.reply)}</span>
-    ${m.error?`<br><span class="err">${esc(m.error)}</span>`:''}
-    <br>timings: stt=${t.stt??'-'} vision=${t.vision??'-'} tts=${t.tts??'-'} locate=${t.locate??'-'} ttfa=${t.ttfa??'-'} total=${t.total??'-'} ms
-    · image ${m.image_bytes}B ${esc(m.image_size)}${m.audio_bytes?` · audio ${m.audio_bytes}B${m.audio_seconds!=null?` (${m.audio_seconds}s)`:''}`:''}</div>
-    ${grid(m.locate)}
-    ${m.audio_file?`<audio controls src="/api/debug/${m.id}/audio"></audio>`:''}</div>`;
-  }).join('')||'no requests yet';
-}
-load();setInterval(load,5000);
-</script></body></html>"""
-
-
 @app.get("/debug")
 async def debug_page():
     if not phone_debug_enabled():
         raise HTTPException(404)
-    return HTMLResponse(DEBUG_HTML)
+    return await index()
 
 
 @app.get("/api/debug/items")
@@ -831,8 +834,8 @@ PAIR_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="view
 .card{background:#1e242b;border-radius:12px;padding:16px;margin:16px 0}
 svg{display:block;margin:12px auto;max-width:100%}
 code{display:block;background:#0d1117;padding:10px;border-radius:8px;word-break:break-all;margin:8px 0}
-.warn{color:#e8b64c}.btn{display:inline-block;background:#2e7d32;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-top:8px}</style></head>
-<body><h2>Pair your phone</h2>
+.warn{color:#e8b64c}.btn{display:inline-block;background:#674398;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-top:8px}</style></head>
+<body><a href="/" style="color:#dbc9ff">Back to phone activity</a><h2>Pair your phone</h2>
 <p class="warn">This QR contains your access token; do not share the screen.</p>
 <p>Scan with your phone camera. If it does not open DrishtiGuide, copy the link text and tap Paste pairing link in the app.</p>
 __CARDS__

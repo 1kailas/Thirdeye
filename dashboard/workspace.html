@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="ml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f4f3fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#191723" media="(prefers-color-scheme: dark)">
+<title>Camera workspace · DrishtiGuide</title>
+<style>
+:root{color-scheme:light dark;--bg:#f4f3fa;--card:#fff;--ink:#242133;--muted:#555266;--line:#d6d2df;--control:#706880;--accent:#523a88;--accent-hover:#392565;--accent-ink:#fff;--soft:#ece7fa;--alert:#fff2eb;--error:#842920;--focus:#835312}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:1rem/1.65 system-ui,"Noto Sans Malayalam",sans-serif}
+button,textarea,input,select{font:inherit;color:inherit}
+button,input,textarea,select,summary{touch-action:manipulation}
+button,select,.url,textarea{border:1px solid var(--control);border-radius:.7rem;background:var(--card)}
+button{min-height:48px;padding:.55rem .9rem;font-weight:650;cursor:pointer}
+button:not([aria-disabled="true"]):hover{background:var(--soft)}
+button[aria-disabled="true"]{border-style:dashed;background:var(--card);color:var(--muted);cursor:default}
+:where(a){color:var(--accent);text-underline-offset:.2em}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+h1,h2,h3,p{margin:0}
+h2{font-size:1.12rem}h3{font-size:1rem}
+small,.muted{color:var(--muted)}
+.skip{position:absolute;inset-inline-start:1rem;top:-10rem;padding:.6rem 1rem;background:var(--card);z-index:2}.skip:focus{top:.5rem}
+header,.shell{max-width:76rem;margin:auto;padding-inline:clamp(.85rem,3vw,2rem)}
+header{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;padding-block:1.65rem 1.15rem}
+h1{font-size:clamp(1.65rem,4vw,2.4rem);letter-spacing:-.045em;line-height:1.15}
+h1 span{color:var(--accent)}
+.tagline{color:var(--muted);font-size:.95rem;margin-top:.25rem}
+.badge{display:inline-flex;align-items:center;gap:.5rem;border:1px solid var(--line);background:var(--card);border-radius:2rem;padding:.3rem .8rem;font-size:.88rem;font-weight:600}
+.dot{display:inline-block;width:.62rem;height:.62rem;border-radius:50%;background:#93641d}
+.badge[data-state="ready"] .dot{background:#634599}
+.badge[data-state="reconnecting"] .dot{background:#a63226}
+.shell{padding-bottom:1.5rem}
+.alert{background:var(--alert);color:var(--error);border:1px solid var(--error);border-radius:.75rem;padding:.7rem 1rem;margin-bottom:.8rem}
+.work{display:grid;grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);align-items:start;gap:1.05rem}
+.card{border:1px solid var(--line);border-radius:1.05rem;background:var(--card);box-shadow:0 .18rem .55rem #142c2012}
+.inner{padding:clamp(.85rem,2.2vw,1.35rem)}
+.row{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+.between{justify-content:space-between}
+.cam-toolbar{padding:.75rem 1rem}
+.viewport{background:#292436;position:relative;display:grid;place-items:center;min-height:14rem;overflow:hidden}
+.waiting{color:#eeeaff;text-align:center;padding:1.5rem;max-width:32rem}
+.waiting strong{display:block;font-size:1.05rem}.waiting small{color:#d8d1eb}
+.image-area{position:relative;width:100%;max-height:60vh;aspect-ratio:var(--aspect,1.5);display:grid;place-items:center}
+.image-bounds{position:relative;height:100%;max-width:100%;aspect-ratio:var(--aspect,1.5)}
+.image-bounds img{display:block;position:absolute;width:100%;height:100%;object-fit:contain}
+#cropBox{position:absolute;border:2px solid #fbe783;box-shadow:0 0 0 900px #13291f55;pointer-events:none}
+.primary,.primary:not([aria-disabled="true"]):hover{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.primary:not([aria-disabled="true"]):hover{background:var(--accent-hover)}
+.quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
+.quick-actions button{min-height:3.55rem;font-size:1.02rem}
+details{margin-top:.8rem;border-top:1px solid var(--line);padding-top:.6rem}
+summary{cursor:pointer;font-weight:650;min-height:44px;align-content:center}
+.settings{display:grid;gap:.6rem;margin-top:.5rem}
+.url,textarea{width:100%;display:block;padding:.55rem .75rem}
+select{min-height:44px;padding:.25rem .45rem}
+textarea{resize:vertical;min-height:3.25rem}
+input[type=range]{width:100%;accent-color:var(--accent);margin:.2rem 0}
+.sliders{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
+.guide-head{margin-bottom:.75rem}
+#activity{color:var(--accent);font-size:.9rem;font-weight:650}
+.instruction{background:var(--soft);border:1px solid var(--line);border-inline-start:.25rem solid var(--accent);border-radius:.85rem;padding:clamp(.85rem,2vw,1.2rem);overflow-wrap:anywhere}
+#instruction{font-size:clamp(1.18rem,2.25vw,1.55rem);font-weight:650;line-height:1.55}
+#response{margin-top:.5rem}
+#stepLabel,#verification{font-size:.87rem;font-weight:650;color:var(--accent)}
+#location,#task{margin-top:.35rem}.block{margin-top:1rem}
+#voice[data-recording="true"]{background:var(--alert);border-color:var(--error);color:var(--error)}
+.audio-options{border-bottom:1px solid var(--line);padding-bottom:.85rem;margin-bottom:.85rem}
+.audio-options label{display:inline-flex;align-items:center;gap:.45rem;min-height:44px}
+.audio-options input{width:1.15rem;height:1.15rem;accent-color:var(--accent)}
+.audio-status{font-size:.88rem;color:var(--muted);margin-top:.3rem}
+.audio-status[data-error="true"]{color:var(--error)}
+#questionForm{display:grid;gap:.45rem}
+#questionForm button{justify-self:start}
+#metrics{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.15rem .8rem;margin:.25rem 0;font-size:.89rem}
+#metrics dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}
+#controls{padding-inline-start:1.4rem}
+#controls li{overflow-wrap:anywhere}
+.key-list{font-size:.9rem}
+kbd{font:inherit;font-weight:650}
+[hidden]{display:none!important}
+@media(max-width:50rem){.work{grid-template-columns:1fr}}
+@media(max-width:28rem){.quick-actions{grid-template-columns:1fr}}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#191723;--card:#252234;--ink:#faf8ff;--muted:#d3cde1;--line:#5e576a;--control:#b9adc9;--accent:#ccbcfa;--accent-hover:#e4d9ff;--accent-ink:#252133;--soft:#38304a;--alert:#3b2321;--error:#ffc1b7;--focus:#ffdb8a}
+}
+@media(prefers-contrast:more){
+  :root{--line:var(--ink);--control:var(--ink)}
+  :focus-visible{outline-width:4px}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#guide">സഹായിയിലേക്ക് പോകുക</a>
+<a class="skip" href="#cameraPanel">ക്യാമറയിലേക്ക് പോകുക</a>
+<header>
+  <a href="/" lang="en">Back to phone activity</a>
+  <div>
+    <h1 lang="en">DrishtiGuide <span>AI</span></h1>
+    <p class="tagline">വീട്ടുപകരണങ്ങൾ ഉപയോഗിക്കാൻ മലയാളത്തിൽ സഹായം</p>
+  </div>
+  <div id="cameraBadge" data-state="connecting" class="badge" role="status"><span class="dot" aria-hidden="true"></span><span id="cameraState">ക്യാമറ ബന്ധിപ്പിക്കുന്നു</span></div>
+</header>
+
+<main class="shell">
+  <p id="configAlert" class="alert" hidden role="status">Sarvam ഉപയോഗിക്കാൻ <code>.env</code> ൽ <code>SARVAM_API_KEY</code> നൽകി ആപ്പ് വീണ്ടും തുടങ്ങുക.</p>
+  <p id="error" class="alert" hidden role="alert"></p>
+  <div class="work">
+    <section class="card inner" id="guide" tabindex="-1" aria-labelledby="guideHeading">
+      <div class="row between guide-head">
+        <h2 id="guideHeading">ദൗത്യസഹായി</h2>
+        <span id="activity" role="status">തയ്യാർ</span>
+      </div>
+      <div class="audio-options">
+        <div class="row" role="group" aria-label="സഹായിയുടെ ശബ്ദം">
+          <button id="intro" type="button">തുടങ്ങാൻ സഹായം കേൾക്കുക</button>
+          <button id="replay" type="button" aria-keyshortcuts="R">വീണ്ടും കേൾക്കുക</button>
+          <button id="stop" type="button" aria-keyshortcuts="Escape">നിർത്തുക</button>
+        </div>
+        <div class="row">
+          <label><input id="autoSpeak" type="checkbox" checked> മറുപടികൾ സ്വയം വായിക്കുക</label>
+          <label for="speechRate">ശബ്ദവേഗം</label>
+          <select id="speechRate">
+            <option value="0.8">പതുക്കെ</option>
+            <option value="1" selected>സാധാരണ</option>
+            <option value="1.2">വേഗത്തിൽ</option>
+          </select>
+        </div>
+        <p id="audioStatus" class="audio-status" role="status" hidden></p>
+      </div>
+      <div class="quick-actions" role="group" aria-label="ചിത്രവും ചോദ്യവും">
+        <button id="capture" type="button" class="primary" aria-keyshortcuts="C" aria-describedby="cameraState">ചിത്രമെടുത്ത് പരിശോധിക്കുക</button>
+        <button id="voice" type="button" aria-pressed="false" aria-keyshortcuts="V" aria-describedby="voiceHint">ചോദ്യം പറയുക</button>
+      </div>
+      <p id="voiceHint"><small>അമർത്തി സംസാരിക്കുക. വീണ്ടും അമർത്തുമ്പോൾ ചോദ്യം അയയ്ക്കും.</small></p>
+      <p id="transcript" class="muted" role="status" hidden></p>
+      <h3 id="device" hidden></h3>
+      <p id="task" class="muted" hidden></p>
+      <div class="instruction block" aria-live="polite" aria-atomic="true">
+        <p id="stepLabel" hidden></p>
+        <p id="instruction">ഉപകരണത്തിന്റെ നിയന്ത്രണ പാനലിലേക്ക് ക്യാമറ ചൂണ്ടി ഒരു ചിത്രമെടുക്കുക.</p>
+        <p id="location" hidden></p>
+        <p id="expectedResult" class="muted" hidden></p>
+        <p id="response" hidden></p>
+        <p id="uncertainty" class="muted" hidden></p>
+        <p id="verification" hidden></p>
+      </div>
+      <div class="row block" role="group" aria-label="ഇപ്പോഴത്തെ ഘട്ടം">
+        <button id="locate" type="button" aria-keyshortcuts="L">നിയന്ത്രണം എവിടെ?</button>
+        <button id="verify" type="button" aria-keyshortcuts="F" aria-describedby="cameraState verification">ചെയ്തു · പരിശോധിക്കുക</button>
+        <button id="next" type="button" aria-keyshortcuts="N">അടുത്തത്</button>
+        <button id="continue" type="button">സ്ഥിരീകരിക്കാതെ തുടരുക</button>
+      </div>
+      <details id="explanationOptions" hidden>
+        <summary>ഈ ഘട്ടം മറ്റൊരു രീതിയിൽ വിശദീകരിക്കുക</summary>
+        <div class="row">
+          <button id="simplify" type="button">ലളിതമായി പറയുക</button>
+          <button id="explain" type="button">കൂടുതൽ വിശദമായി പറയുക</button>
+        </div>
+      </details>
+      <form id="questionForm" class="block">
+        <label for="question">ചോദ്യം അല്ലെങ്കിൽ ലക്ഷ്യം</label>
+        <textarea id="question" rows="2" maxlength="500" required></textarea>
+        <div class="row between">
+          <button id="ask" type="submit">ചോദിക്കുക</button>
+          <button id="reset" type="button">ദൗത്യം മായ്ക്കുക</button>
+        </div>
+      </form>
+      <details id="controlsDetails" hidden>
+        <summary>ചിത്രത്തിൽ കണ്ട നിയന്ത്രണങ്ങൾ</summary>
+        <ul id="controls"></ul>
+      </details>
+    </section>
+
+    <section class="card" id="cameraPanel" tabindex="-1" aria-labelledby="previewHeading">
+      <div class="row between cam-toolbar">
+        <h2 id="previewHeading">തത്സമയ ക്യാമറ</h2>
+        <div class="row">
+          <button id="rotate" type="button">തിരിക്കുക</button>
+          <button id="refresh" type="button">വീണ്ടും ബന്ധിപ്പിക്കുക</button>
+        </div>
+      </div>
+      <div class="viewport" id="viewport">
+        <div id="waiting" class="waiting">
+          <strong id="previewState">ക്യാമറ കാത്തിരിക്കുന്നു</strong>
+          <small id="cameraDetail"></small>
+        </div>
+        <div id="imageArea" class="image-area" hidden>
+          <div class="image-bounds">
+            <img id="preview" alt="ഫോണിലെ ക്യാമറയുടെ തത്സമയ ദൃശ്യം">
+            <div id="cropBox" hidden aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+      <div class="inner">
+        <details>
+          <summary>ക്യാമറയും ചിത്രഭാഗവും</summary>
+          <div class="settings">
+            <label for="cameraUrl">IP Webcam വിലാസം</label>
+            <input id="cameraUrl" class="url" type="url" dir="ltr" spellcheck="false" inputmode="url" maxlength="600">
+            <div class="row">
+              <button id="connect" type="button">ബന്ധിപ്പിക്കുക</button>
+              <button id="disconnect" type="button">ബന്ധം വിച്ഛേദിക്കുക</button>
+            </div>
+            <label for="zoom">ചിത്രഭാഗം വലുതാക്കുക <output id="zoomValue" for="zoom">1×</output></label>
+            <input id="zoom" type="range" min="1" max="4" step="0.25" value="1">
+            <div class="sliders">
+              <label>ഇടത് ↔ വലത് <input id="cropX" type="range" min="0" max="1" step=".05" value=".5"></label>
+              <label>മുകളിൽ ↔ താഴെ <input id="cropY" type="range" min="0" max="1" step=".05" value=".5"></label>
+            </div>
+          </div>
+        </details>
+      </div>
+    </section>
+  </div>
+  <details>
+    <summary>കീബോർഡ് കുറുക്കുവഴികളും സമയവും</summary>
+    <label><input id="shortcutsEnabled" type="checkbox" checked> ഒറ്റ അക്ഷര കുറുക്കുവഴികൾ ഉപയോഗിക്കുക</label>
+    <p class="key-list">ചിത്രം <kbd>C</kbd> · വീണ്ടും കേൾക്കുക <kbd>R</kbd> · നിയന്ത്രണം എവിടെ <kbd>L</kbd> · അടുത്തത് <kbd>N</kbd> · സ്ഥിരീകരിക്കുക <kbd>F</kbd> · സംസാരിക്കാൻ അമർത്തിപ്പിടിക്കുക <kbd>V</kbd> · നിർത്തുക <kbd>Esc</kbd></p>
+    <dl id="metrics"></dl>
+  </details>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const idleText = "ഉപകരണത്തിന്റെ നിയന്ത്രണ പാനലിലേക്ക് ക്യാമറ ചൂണ്ടി ഒരു ചിത്രമെടുക്കുക.";
+const appConnectionError = "ആപ്പുമായി ബന്ധം ലഭിക്കുന്നില്ല. Python ആപ്പ് പ്രവർത്തിക്കുന്നുണ്ടെന്ന് പരിശോധിക്കുക.";
+const cameraLabels = {
+  disconnected: "ക്യാമറ വിച്ഛേദിച്ചു", connecting: "ക്യാമറ ബന്ധിപ്പിക്കുന്നു",
+  reconnecting: "ക്യാമറ ബന്ധം ലഭിച്ചില്ല", ready: "ക്യാമറ ബന്ധിപ്പിച്ചു"
+};
+const phaseLabels = {
+  IDLE: "തയ്യാർ", CAMERA_READY: "ചിത്രമെടുക്കാം", CAPTURING: "ചിത്രമെടുക്കുന്നു",
+  ANALYZING: "ചിത്രം പരിശോധിക്കുന്നു", DEVICE_IDENTIFIED: "ഉപകരണം തിരിച്ചറിഞ്ഞു",
+  TASK_ACTIVE: "ദൗത്യം തുടരുന്നു", AWAITING_ACTION: "ഘട്ടം പൂർത്തിയാക്കുക",
+  VERIFYING: "മാറ്റം പരിശോധിക്കുന്നു", STEP_COMPLETED: "അടുത്ത ഘട്ടത്തിലേക്ക് പോകാം",
+  TASK_COMPLETED: "ദൗത്യം പൂർത്തിയായി", TRANSCRIBING: "പറഞ്ഞത് തിരിച്ചറിയുന്നു", ERROR: "ബന്ധമോ ക്രമീകരണമോ പരിശോധിക്കുക"
+};
+const verificationLabels = {
+  VERIFIED: "മാറ്റം ഫോട്ടോയിൽ സ്ഥിരീകരിച്ചു",
+  NOT_VERIFIED: "പ്രതീക്ഷിച്ച മാറ്റം കാണുന്നില്ല",
+  UNCERTAIN: "മാറ്റം വ്യക്തമല്ല",
+  UNAVAILABLE: "ഫോട്ടോ സ്ഥിരീകരണമില്ലാതെ തുടർന്നു"
+};
+const metricLabels = {
+  connect_ms: "ക്യാമറ ബന്ധിപ്പിക്കൽ", live_age_ms: "തത്സമയ ഫ്രെയിമിന്റെ പഴക്കം",
+  frame_age_ms: "എടുത്ത ചിത്രത്തിന്റെ പഴക്കം", capture_ms: "ചിത്രമെടുക്കൽ",
+  jpeg_ms: "JPEG തയ്യാറാക്കൽ", vision_ms: "Sarvam ചിത്രം", stt_ms: "Sarvam ശബ്ദം തിരിച്ചറിയൽ",
+  total_ms: "എഴുത്തിൽ മറുപടി ലഭിക്കാൻ എടുത്ത സമയം",
+  tts_ms: "Sarvam ശബ്ദം തയ്യാറാക്കൽ", audible_ms: "ആവശ്യപ്പെട്ടത് മുതൽ ശബ്ദം തുടങ്ങുന്നതുവരെ"
+};
+let data = null, statusLoading = false, pending = null, requestedPhase = "", responseMs = null;
+let recorder = null, micStream = null, micPending = false, micCancelled = false, recording = false;
+let recordTimer = null, keyTalking = false, urlDirty = false;
+let uiError = "", previewAttempt = 0;
+const player = new Audio();
+let speechRequest = null, speechSequence = 0, clip = null, lastUtterance = "";
+let voicePlayed = false, voiceTiming = null, audioArmed = false, audioContext = null;
+let ttsMs = null, audibleMs = null;
+
+function setText(id, value, hideBlank = false) {
+  const node = $(id);
+  if (node.textContent !== value) node.textContent = value;
+  if (hideBlank) node.hidden = !value;
+}
+
+function setAvailable(id, available) {
+  const value = String(!available);
+  if ($(id).getAttribute("aria-disabled") !== value) $(id).setAttribute("aria-disabled", value);
+}
+
+function available(id) {
+  return $(id).getAttribute("aria-disabled") !== "true";
+}
+
+function readPreference(name) {
+  try {return localStorage.getItem("drishtiguide." + name);} catch {return null;}
+}
+
+function savePreference(name, value) {
+  try {localStorage.setItem("drishtiguide." + name, value);} catch {}
+}
+
+function crop() {
+  return {zoom: Number($("zoom").value), x: Number($("cropX").value), y: Number($("cropY").value)};
+}
+
+function renderCrop() {
+  const selected = crop();
+  const percent = 100 / selected.zoom;
+  $("zoomValue").value = selected.zoom + "×";
+  $("cropX").disabled = $("cropY").disabled = selected.zoom === 1;
+  const box = $("cropBox");
+  box.hidden = selected.zoom === 1;
+  box.style.width = box.style.height = percent + "%";
+  box.style.left = ((100 - percent) * selected.x) + "%";
+  box.style.top = ((100 - percent) * selected.y) + "%";
+}
+
+function renderMetrics() {
+  const camera = data?.camera || {};
+  const stats = {...data?.metrics, connect_ms: camera.connect_ms,
+                 live_age_ms: camera.frame_age_ms, total_ms: responseMs,
+                 tts_ms: ttsMs, audible_ms: audibleMs};
+  const items = [];
+  for (const [key, label] of Object.entries(metricLabels)) {
+    if (stats[key] == null) continue;
+    const term = document.createElement("dt"), value = document.createElement("dd");
+    term.textContent = label;
+    value.textContent = Math.round(stats[key]) + " ms";
+    items.push(term, value);
+  }
+  $("metrics").replaceChildren(...items);
+}
+
+function render() {
+  const session = data?.session || {}, cam = data?.camera || {state: "connecting"};
+  const busy = Boolean(data?.busy || pending);
+  const phase = data?.phase || requestedPhase || data?.state || "IDLE";
+  $("cameraBadge").dataset.state = cam.state;
+  setText("cameraState", cameraLabels[cam.state]);
+  setText("previewState", cameraLabels[cam.state]);
+  setText("cameraDetail", cam.detail || (cam.state === "ready" ? "" : "ഫോണിൽ IP Webcam തുറന്ന് പിൻ ക്യാമറ തിരഞ്ഞെടുക്കുക."));
+  $("waiting").hidden = cam.state === "ready";
+  $("imageArea").hidden = cam.state !== "ready";
+  if (cam.state === "ready" && cam.width && cam.height) {
+    $("imageArea").style.setProperty("--aspect", cam.width + " / " + cam.height);
+    const height = Math.min($("viewport").clientWidth * cam.height / cam.width, innerHeight * 0.60);
+    $("imageArea").style.height = height + "px";
+  }
+  if (cam.state === "ready" && !$("preview").hasAttribute("src")) {
+    $("preview").src = "/api/preview?i=" + (++previewAttempt);
+  } else if (cam.state !== "ready") {
+    $("preview").removeAttribute("src");
+  }
+  if (!urlDirty && data?.camera.url) $("cameraUrl").value = cam.url;
+  $("configAlert").hidden = !data || data.ai_ready;
+  setText("error", uiError || data?.error || "", true);
+  const activity = recording ? "ശബ്ദം റെക്കോർഡ് ചെയ്യുന്നു" :
+    micPending ? "മൈക്രോഫോൺ അനുമതി കാത്തിരിക്കുന്നു" :
+    session.needs_new_image && !busy ? "കൂടുതൽ വ്യക്തമായ ചിത്രം വേണം" : phaseLabels[phase];
+  setText("activity", activity);
+  setText("task", session.task || "", true);
+  setText("device", session.device_name || "", true);
+  setText("stepLabel", session.step ? "ഘട്ടം " + session.step.number : "", true);
+  const shown = session.current_instruction || session.response || idleText;
+  setText("instruction", shown);
+  const location = session.current_instruction && session.step?.control_location_ml;
+  const extraLocation = location && !shown.includes(location) ? location : "";
+  const verification = verificationLabels[session.verification] ||
+    (session.current_instruction && session.step && !session.step.visually_verifiable ?
+      "ഈ ഘട്ടം ഫോട്ടോയിൽ പരിശോധിക്കാനാവില്ല." : "");
+  const fullInstruction = [shown, extraLocation, verification].filter(Boolean).join(" ");
+  setText("location", extraLocation, true);
+  const expected = session.current_instruction && session.step?.expected_result;
+  setText("expectedResult", expected ? "കാണേണ്ടത് · " + expected : "", true);
+  setText("response", session.response && ![shown, [shown, extraLocation].filter(Boolean).join(" "),
+                                          fullInstruction].includes(session.response) ? session.response : "", true);
+  setText("verification", verification, true);
+  const uncertainty = session.uncertainty_reason;
+  setText("uncertainty", uncertainty && !shown.includes(uncertainty) &&
+          !session.response?.includes(uncertainty) ? uncertainty : "", true);
+  const canAct = !busy && !recording && !micPending;
+  setAvailable("capture", canAct && cam.state === "ready");
+  setAvailable("verify", canAct && cam.state === "ready" && session.can_verify);
+  setAvailable("next", canAct && session.task && !session.finished);
+  setAvailable("continue", canAct && session.can_continue);
+  setAvailable("locate", canAct && session.can_locate);
+  setAvailable("simplify", canAct && session.current_instruction);
+  setAvailable("explain", canAct && session.current_instruction);
+  $("explanationOptions").hidden = !session.current_instruction;
+  setAvailable("ask", canAct);
+  setAvailable("intro", Boolean(data && !recording && !micPending && !busy));
+  setAvailable("replay", Boolean(data && !recording && !micPending && !busy));
+  setAvailable("voice", recording || (canAct && data?.ai_ready && navigator.mediaDevices?.getUserMedia &&
+                                      window.MediaRecorder));
+  $("voice").dataset.recording = String(recording);
+  $("voice").setAttribute("aria-pressed", String(recording));
+  setText("voice", recording ? "റെക്കോർഡിങ് അയയ്ക്കുക" : "ചോദ്യം പറയുക");
+  const controls = session.visible_controls || [];
+  $("controlsDetails").hidden = !controls.length;
+  const controlKey = JSON.stringify(controls);
+  if ($("controls").dataset.content !== controlKey) {
+    const items = controls.map((control) => {
+      const item = document.createElement("li");
+      const mark = control.confidence === "clear" && (control.label || control.symbol);
+      const inferred = control.possible_function_ml ? "സാധ്യത: " + control.possible_function_ml : "";
+      item.textContent = [mark || "അടയാളം വ്യക്തമല്ല", control.position_ml, control.appearance_ml,
+                          inferred].filter(Boolean).join(" · ");
+      return item;
+    });
+    $("controls").replaceChildren(...items);
+    $("controls").dataset.content = controlKey;
+  }
+  renderMetrics();
+}
+
+async function checked(response) {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.detail === "string" ? payload.detail : "അഭ്യർത്ഥന പൂർത്തിയായില്ല. HTTP " + response.status);
+  }
+  return response;
+}
+
+function armAudio() {
+  audioArmed = true;
+  if (!$("autoSpeak").checked) return;
+  try {
+    audioContext ||= new AudioContext();
+    if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+  } catch {}
+}
+
+function signal(failed = false) {
+  if (!$("autoSpeak").checked || audioContext?.state !== "running") return;
+  const now = audioContext.currentTime;
+  const tone = audioContext.createOscillator(), gain = audioContext.createGain();
+  tone.frequency.setValueAtTime(failed ? 410 : 550, now);
+  tone.frequency.setValueAtTime(failed ? 310 : 660, now + 0.075);
+  gain.gain.setValueAtTime(0.033, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+  tone.connect(gain).connect(audioContext.destination);
+  tone.start(now);
+  tone.stop(now + 0.165);
+}
+
+function audioStatus(message = "", error = false) {
+  $("audioStatus").dataset.error = String(error);
+  setText("audioStatus", message, true);
+}
+
+function stopSpeaking() {
+  ++speechSequence;
+  speechRequest?.abort();
+  speechRequest = null;
+  player.pause();
+  voicePlayed = false;
+  voiceTiming = null;
+  audioStatus();
+}
+
+function helpMessage() {
+  const state = data?.camera.state;
+  const introduction = state === "ready"
+    ? "ക്യാമറ തയ്യാറാണ്."
+    : "ക്യാമറ തയ്യാറായിട്ടില്ല. ഫോണിൽ ഐ പി വെബ്‌ക്യാം തുറന്ന് വീണ്ടും ബന്ധിപ്പിക്കുക അമർത്തുക.";
+  return introduction + " ഉപകരണത്തിന്റെ മുന്നിലേക്ക് ഫോൺ ചൂണ്ടി ചിത്രമെടുത്ത് പരിശോധിക്കുക. " +
+    "എന്ത് ചെയ്യണമെന്ന് പറയുകയോ എഴുതുകയോ ചെയ്യുക. ബട്ടൺ കണ്ടെത്താൻ സഹായം വേണമെങ്കിൽ നിയന്ത്രണം എവിടെ എന്ന് ചോദിക്കുക. " +
+    "നിർദേശം ചെയ്ത ശേഷം ചെയ്തു എന്ന് പറയുക, അല്ലെങ്കിൽ പരിശോധിക്കുക അമർത്തുക.";
+}
+
+async function speak(text, {manual = false, remember = true, started = null} = {}) {
+  if (!text) return;
+  if (remember) lastUtterance = text;
+  if ((!manual && (!$("autoSpeak").checked || !audioArmed)) || recording || micPending) return;
+  stopSpeaking();
+  if (!data?.ai_ready) {
+    audioStatus("ശബ്ദസഹായത്തിന് .env ൽ Sarvam കീ നൽകുക.", true);
+    signal(true);
+    return;
+  }
+  const revision = data.revision, sequence = speechSequence;
+  try {
+    if (clip?.text !== text || clip.revision !== revision) {
+      speechRequest = new AbortController();
+      audioStatus("മലയാള ശബ്ദം തയ്യാറാക്കുന്നു");
+      const response = await checked(await fetch("/api/speech", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text, revision}), signal: speechRequest.signal,
+      }));
+      const audio = await response.blob();
+      if (sequence !== speechSequence) return;
+      if (clip) URL.revokeObjectURL(clip.url);
+      clip = {text, revision, url: URL.createObjectURL(audio)};
+      player.src = clip.url;
+      ttsMs = Number(response.headers.get("X-TTS-Ms"));
+    } else {
+      ttsMs = 0;
+    }
+    player.currentTime = 0;
+    player.playbackRate = Number($("speechRate").value);
+    voiceTiming = started;
+    await player.play();
+  } catch (error) {
+    if (sequence !== speechSequence) return;
+    const message = error.name === "NotAllowedError"
+      ? "ശബ്ദം കേൾക്കാൻ വീണ്ടും കേൾക്കുക അമർത്തുക."
+      : "മലയാള ശബ്ദം ലഭിച്ചില്ല. വീണ്ടും കേൾക്കുക അമർത്തുക.";
+    audioStatus(message, true);
+    signal(true);
+  } finally {
+    if (sequence === speechSequence) speechRequest = null;
+  }
+}
+
+player.addEventListener("playing", () => {
+  if (player.paused) return;
+  voicePlayed = true;
+  audioStatus("മലയാളത്തിൽ വായിക്കുന്നു");
+  if (voiceTiming !== null) audibleMs = performance.now() - voiceTiming;
+  voiceTiming = null;
+  renderMetrics();
+});
+player.addEventListener("ended", () => {
+  voicePlayed = false;
+  if (!speechRequest) audioStatus();
+});
+
+function receive(payload) {
+  if (data && payload.revision < data.revision) return;
+  if (data && payload.revision > data.revision && !pending) {
+    stopSpeaking();
+    lastUtterance = "";
+  }
+  const previousCamera = data?.camera.state;
+  data = payload;
+  render();
+  const state = payload.camera.state;
+  if (state !== previousCamera && previousCamera && !pending && !payload.busy &&
+      !voicePlayed && !speechRequest) {
+    if (state === "ready") speak("ക്യാമറ തയ്യാറാണ്. ചിത്രമെടുത്ത് പരിശോധിക്കാം.", {remember: false});
+    if (state === "reconnecting") {
+      speak(payload.camera.detail || cameraLabels[state], {remember: false});
+    }
+  }
+}
+
+async function poll() {
+  if (statusLoading) return;
+  statusLoading = true;
+  try {
+    const reply = await checked(await fetch("/api/status"));
+    if (uiError === appConnectionError) uiError = "";
+    receive(await reply.json());
+  } catch {
+    if (!uiError) {
+      uiError = appConnectionError;
+      signal(true);
+      render();
+    }
+  } finally {
+    statusLoading = false;
+    setTimeout(poll, 900);
+  }
+}
+
+async function send(action, text = "", audio = null) {
+  const interrupt = action === "stop" || action === "reset";
+  if (!interrupt && (pending || data?.busy)) return;
+  armAudio();
+  stopSpeaking();
+  if (interrupt) {
+    pending?.abort();
+    cancelMic();
+  }
+  uiError = "";
+  if (action !== "stop") responseMs = ttsMs = audibleMs = null;
+  if (action === "reset") {
+    lastUtterance = "";
+    setText("transcript", "", true);
+  }
+  const started = performance.now();
+  const control = new AbortController();
+  pending = control;
+  requestedPhase = {capture: "CAPTURING", verify: "CAPTURING", query: "ANALYZING",
+                    voice: "TRANSCRIBING", simplify: "ANALYZING", explain: "ANALYZING"}[action] || "";
+  if (action === "capture" || action === "verify") signal();
+  render();
+  try {
+    const selected = crop();
+    const url = audio ? "/api/voice?" + new URLSearchParams(selected) : "/api/command";
+    const result = await checked(await fetch(url, {
+      method: "POST", signal: control.signal,
+      headers: {"Content-Type": audio ? audio.type : "application/json"},
+      body: audio || JSON.stringify({action, text, crop: selected})
+    }));
+    const reply = await result.json();
+    if (pending !== control) return;
+    if (!interrupt) responseMs = performance.now() - started;
+    receive(reply);
+    if (reply.transcript) setText("transcript", "കേട്ടത് — " + reply.transcript, true);
+    if (!reply.stopped) speak(reply.session.response, {started});
+  } catch (error) {
+    if (pending === control && error.name !== "AbortError") {
+      const disconnected = error instanceof TypeError;
+      uiError = disconnected ? appConnectionError : error.message;
+      signal(true);
+      if (!disconnected) speak(uiError);
+    }
+  } finally {
+    if (pending === control) {
+      pending = null;
+      requestedPhase = "";
+      render();
+    }
+  }
+}
+
+async function configure(action) {
+  armAudio();
+  uiError = "";
+  const settings = {action};
+  if (action === "connect") settings.url = $("cameraUrl").value.trim();
+  if (action === "rotate") settings.rotation = ((data?.camera.rotation || 0) + 90) % 360;
+  if (action !== "rotate") {
+    pending?.abort();
+    pending = null;
+    requestedPhase = "";
+    cancelMic();
+    stopSpeaking();
+  }
+  try {
+    const reply = await checked(await fetch("/api/camera", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(settings)
+    }));
+    if (action === "connect") {
+      urlDirty = false;
+      responseMs = ttsMs = audibleMs = null;
+      setText("transcript", "", true);
+    }
+    receive(await reply.json());
+  } catch (error) {
+    uiError = error.message;
+    signal(true);
+    render();
+  }
+}
+
+function cancelMic() {
+  micCancelled = true;
+  clearTimeout(recordTimer);
+  recording = false;
+  micStream?.getTracks().forEach((track) => track.stop());
+  if (recorder?.state === "recording") recorder.stop();
+}
+
+function endRecording() {
+  clearTimeout(recordTimer);
+  if (recorder?.state === "recording") recorder.stop();
+  if (micPending) micCancelled = true;
+}
+
+async function startRecording() {
+  if (!available("voice") || recorder || recording || micPending) return;
+  armAudio();
+  stopSpeaking();
+  uiError = "";
+  micPending = true;
+  micCancelled = false;
+  render();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    if (micCancelled) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    micStream = stream;
+    const type = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find(
+      (candidate) => MediaRecorder.isTypeSupported(candidate));
+    recorder = new MediaRecorder(stream, type ? {mimeType: type} : {});
+    const activeRecorder = recorder;
+    const chunks = [];
+    const began = performance.now();
+    recorder.ondataavailable = (event) => {if (event.data.size) chunks.push(event.data);};
+    recorder.onstop = () => {
+      clearTimeout(recordTimer);
+      const actual = (activeRecorder.mimeType || chunks[0]?.type || "").split(";")[0];
+      const blob = new Blob(chunks, {type: actual});
+      stream.getTracks().forEach((track) => track.stop());
+      micStream = recorder = null;
+      recording = false;
+      if (!micCancelled && blob.size && performance.now() - began >= 250) {
+        send("voice", "", blob);
+      } else if (!micCancelled) {
+        uiError = "വേണ്ടത്ര ശബ്ദം ലഭിച്ചില്ല. വീണ്ടും സംസാരിക്കുക.";
+        speak(uiError);
+      }
+      render();
+    };
+    recorder.onerror = () => {
+      cancelMic();
+      uiError = "മൈക്രോഫോൺ റെക്കോർഡിങ് നിലച്ചു. വീണ്ടും ശ്രമിക്കുക.";
+      signal(true);
+      render();
+    };
+    recorder.start();
+    recording = true;
+    recordTimer = setTimeout(endRecording, 20000);
+  } catch {
+    cancelMic();
+    recorder = micStream = null;
+    uiError = "മൈക്രോഫോൺ ലഭിച്ചില്ല. ബ്രൗസറിൽ അനുമതി നൽകി വീണ്ടും ശ്രമിക്കുക.";
+    micPending = false;
+    speak(uiError);
+  } finally {
+    micPending = false;
+    render();
+  }
+}
+
+for (const action of ["capture", "next", "verify", "continue", "locate", "simplify", "explain", "stop", "reset"]) {
+  $(action).addEventListener("click", () => {
+    if (available(action)) send(action);
+  });
+}
+for (const action of ["connect", "disconnect", "refresh", "rotate"]) {
+  $(action).addEventListener("click", () => configure(action));
+}
+$("cameraUrl").addEventListener("input", () => {urlDirty = true;});
+$("preview").addEventListener("error", () => {
+  $("preview").removeAttribute("src");
+});
+for (const id of ["zoom", "cropX", "cropY"]) $(id).addEventListener("input", renderCrop);
+$("questionForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = $("question").value.trim();
+  if (text && available("ask")) send("query", text);
+});
+$("voice").addEventListener("click", () => recording ? endRecording() : startRecording());
+$("intro").addEventListener("click", () => {
+  if (!available("intro")) return;
+  armAudio();
+  speak(helpMessage(), {manual: true});
+});
+$("replay").addEventListener("click", () => {
+  if (!available("replay")) return;
+  armAudio();
+  speak(lastUtterance || data?.session.response || helpMessage(), {manual: true});
+});
+$("autoSpeak").addEventListener("change", () => {
+  const enabled = $("autoSpeak").checked;
+  savePreference("autoSpeak", enabled ? "on" : "off");
+  if (enabled) armAudio();
+  else stopSpeaking();
+});
+$("speechRate").addEventListener("change", () => {
+  savePreference("speechRate", $("speechRate").value);
+  player.playbackRate = Number($("speechRate").value);
+});
+$("shortcutsEnabled").addEventListener("change", () => {
+  savePreference("shortcuts", $("shortcutsEnabled").checked ? "on" : "off");
+});
+const shortcuts = {c: "capture", r: "replay", l: "locate", n: "next", f: "verify"};
+document.addEventListener("keydown", (event) => {
+  if (event.repeat || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+  if (event.key === "Escape") {
+    send("stop");
+    return;
+  }
+  if (!$("shortcutsEnabled").checked) return;
+  if (event.target.closest("input,textarea,select,[contenteditable]")) return;
+  const key = event.key.toLowerCase();
+  if (key === "v") {
+    event.preventDefault();
+    keyTalking = true;
+    startRecording();
+  } else if (shortcuts[key]) {
+    event.preventDefault();
+    $(shortcuts[key]).click();
+  }
+});
+document.addEventListener("keyup", (event) => {
+  if (event.key.toLowerCase() === "v" && keyTalking) {
+    keyTalking = false;
+    endRecording();
+  }
+});
+window.addEventListener("blur", () => {
+  if (keyTalking) {
+    keyTalking = false;
+    endRecording();
+  }
+});
+window.addEventListener("resize", render);
+$("autoSpeak").checked = readPreference("autoSpeak") !== "off";
+$("shortcutsEnabled").checked = readPreference("shortcuts") !== "off";
+const savedRate = readPreference("speechRate");
+if (["0.8", "1", "1.2"].includes(savedRate)) $("speechRate").value = savedRate;
+renderCrop();
+render();
+poll();
+</script>
+</body>
+</html>
