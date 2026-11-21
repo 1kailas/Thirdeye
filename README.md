@@ -191,6 +191,10 @@ With the server running, open `http://127.0.0.1:8000/pair` on the PC and scan th
 
 Run `python -m unittest discover -s tests` to check the server before you try it on a phone.
 
+## Project website
+
+The static project site includes a playable Malayalam button-finder demo. To host it on GitHub Pages, open **Settings → Pages**, choose **Deploy from a branch**, then select **main** and **/docs**. The site entry point is [docs/index.html](docs/index.html).
+
 ## Using it
 
 | Gesture | What happens |

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f1">
+  <meta name="description" content="DrishtiGuide turns an Android phone into a Malayalam-speaking visual assistant. Hear a button-finding example and learn how to set it up.">
+  <title>Thirdeye — DrishtiGuide for Android</title>
+  <link rel="preload" href="site-assets/bricolage.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="site-assets/site.css">
+  <noscript><style>.choices { display: none; }</style></noscript>
+  <script defer src="site-assets/site.js"></script>
+</head>
+<body id="top">
+<a href="#main" class="skip">Skip to content</a>
+<header class="mast wrap">
+  <a class="brand" href="#top" aria-label="Thirdeye home"><i class="eye" aria-hidden="true"></i>Thirdeye</a>
+  <nav aria-label="Main navigation"><a href="#demo">Demo</a><a href="#gestures">How it works</a><a href="#setup">Setup</a></nav>
+  <a class="repo" href="https://github.com/1kailas/Thirdeye"><span aria-hidden="true">&lt;/&gt;</span> GitHub</a>
+</header>
+
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="pitch">
+      <p class="product"><span class="app-icon" aria-hidden="true">+</span> DrishtiGuide for Android</p>
+      <h1 id="hero-title">See with<br>sound<span class="period">.</span></h1>
+      <p class="intro">Point your phone at the world around you. Press Volume Up and hear what’s in front of you, in Malayalam.</p>
+      <div class="hero-actions"><button class="listen" id="listen" type="button" hidden><span class="play-icon" aria-hidden="true"></span><span id="listen-label">Hear the demo</span></button><a href="#setup" class="plain-link">Set up the app</a></div>
+      <p class="origin">For blind and low-vision people. Built in Kerala.</p>
+    </div>
+
+    <figure class="finder" id="demo" aria-labelledby="finder-title">
+      <div class="finder-head"><span class="view-icon" aria-hidden="true"></span><strong id="finder-title">Button finder</strong><span class="example">Interactive example</span></div>
+      <div class="photo">
+        <img width="1448" height="1086" fetchpriority="high" src="site-assets/remote.webp" alt="An ivory TV remote on a yellow worktop. Its power button sits above the number pad, and mute is on the bottom row.">
+        <span class="locator" aria-hidden="true"><i></i><b id="marker">Mute</b></span>
+      </div>
+      <figcaption>
+        <div class="choices" aria-label="Choose a button to locate" role="group">
+          <span>Find</span><button type="button" data-key="mute" aria-pressed="true">Mute</button><button type="button" data-key="five" aria-pressed="false">5</button><button type="button" data-key="power" aria-pressed="false">Power</button>
+          <button id="sample-play" class="sample-play" type="button" aria-label="Play Malayalam example" hidden><i class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></i></button>
+        </div>
+        <div class="reply" aria-live="polite" aria-atomic="true"><p id="line-ml" lang="ml">താഴത്തെ വരിയിൽ ഇടതുവശത്താണ് മ്യൂട്ട് ബട്ടൺ.</p><p id="line-en">Mute is on the left of the bottom row.</p></div>
+        <audio id="voice" controls preload="none" src="site-assets/mute.mp3" aria-label="Malayalam button guidance"></audio>
+        <span role="status" class="audio-status"></span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="gestures wrap" id="gestures" aria-labelledby="gestures-title">
+    <div class="gestures-copy">
+      <p class="section-label">How it works</p>
+      <h2 id="gestures-title">One familiar<br>volume key.</h2>
+      <p>Keep your thumb on the side of the phone. The same button lets you look, ask, or interrupt.</p>
+      <div class="gesture-list">
+        <details name="gesture" open><summary>Tap to look</summary><p>Press Volume Up once. DrishtiGuide takes a photo and describes the scene aloud.</p></details>
+        <details name="gesture"><summary>Hold to ask</summary><p>Hold Volume Up while you ask a question in Malayalam, English, or Hindi. Release it to send your question with the photo.</p></details>
+        <details name="gesture"><summary>Press to interrupt</summary><p>Press Volume Up during a reply to stop playback. Use that same press to start your next request.</p></details>
+      </div>
+    </div>
+    <figure class="phone-stage">
+      <div class="sound-rings" aria-hidden="true"></div>
+      <div class="handset"><img src="images/app-speaking-dark.png" loading="lazy" width="720" height="1223" alt="The DrishtiGuide Android app speaking a Malayalam reply, with the microphone control and setup checklist."></div>
+      <figcaption>DrishtiGuide on Android</figcaption>
+    </figure>
+  </section>
+
+  <section id="setup" class="setup">
+    <div class="wrap setup-inner">
+      <div><p class="section-label">Get started</p><h2>Set up your<br>third eye.</h2><p>You’ll need an Android phone, a computer, and a Sarvam API key.</p></div>
+      <ol class="steps">
+        <li><h3>Start the server</h3><p>Configure the API key and phone token on your computer, then run <code>./run.sh</code>.</p><a href="https://github.com/1kailas/Thirdeye#quick-start">Server setup guide</a></li>
+        <li><h3>Install the Android app</h3><p>Build the APK, install it on your phone, and enable the Volume Up accessibility service.</p><a href="https://github.com/1kailas/Thirdeye/blob/main/android/README.md">Android build and install</a></li>
+        <li><h3>Pair and listen</h3><p>Open <code>/pair</code> on the computer and scan its QR code with the phone. Start the service and try a quick press.</p></li>
+      </ol>
+    </div>
+  </section>
+</main>
+<footer class="wrap"><a class="brand" href="#top"><i class="eye" aria-hidden="true"></i>Thirdeye</a><p>HackaThoni · Alappuzha, Kerala</p><a href="https://github.com/1kailas/Thirdeye/blob/main/LICENSE">MIT license</a></footer>
+</body>
+</html>
