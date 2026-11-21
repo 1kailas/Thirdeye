@@ -27,6 +27,7 @@ import android.os.Vibrator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
+import androidx.annotation.StringRes
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -64,7 +65,7 @@ class ThirdEyeService : LifecycleService() {
     private lateinit var history: History
 
     private var tts: TextToSpeech? = null
-    private var malayalamTts = false
+    @Volatile private var malayalamTtsReady = false
     private var mediaPlayer: MediaPlayer? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: android.media.AudioFocusRequest? = null
@@ -121,12 +122,7 @@ class ThirdEyeService : LifecycleService() {
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val engine = tts ?: return@TextToSpeech
-                val malayalam = engine.setLanguage(Locale.forLanguageTag("ml-IN"))
-                malayalamTts = malayalam != TextToSpeech.LANG_MISSING_DATA
-                    && malayalam != TextToSpeech.LANG_NOT_SUPPORTED
-                if (!malayalamTts) {
-                    engine.language = Locale.getDefault()
-                }
+                malayalamTtsReady = engine.setLanguage(Locale.forLanguageTag("ml-IN")) >= TextToSpeech.LANG_AVAILABLE
             }
         }
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -201,7 +197,7 @@ class ThirdEyeService : LifecycleService() {
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
                 if (jpeg == null) {
-                    settleWithError(localError(false))
+                    settleWithError(R.string.err_no_photo_ml)
                 } else {
                     clickTone()
                     send(jpeg, null)
@@ -219,7 +215,7 @@ class ThirdEyeService : LifecycleService() {
                 val jpeg = photoJob?.await() ?: capturePhoto()
                 photoJob = null
                 if (jpeg == null) {
-                    settleWithError(localError(false))
+                    settleWithError(R.string.err_no_photo_ml)
                 } else {
                     send(jpeg, wav)
                 }
@@ -252,7 +248,7 @@ class ThirdEyeService : LifecycleService() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                settleWithError(localError(true))
+                settleWithError(R.string.err_network_ml)
             }
         }
     }
@@ -310,8 +306,8 @@ class ThirdEyeService : LifecycleService() {
                 if (outcome == null) {
                     queue.cancel()
                     recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
-                        System.currentTimeMillis() - startedAt, getString(R.string.err_network), null, null)
-                    settleWithError(localError(true))
+                        System.currentTimeMillis() - startedAt, getString(R.string.err_network_ml), null, null)
+                    settleWithError(R.string.err_network_ml)
                     return@launch
                 }
                 val result = outcome.result
@@ -337,7 +333,7 @@ class ThirdEyeService : LifecycleService() {
                 if (requestId != requestSeq) return@launch
                 recordHistory(imageJpeg, audioWav, null, null, null, 0, false,
                     System.currentTimeMillis() - startedAt, failure.message, null, null)
-                settleWithError(localError(true))
+                settleWithError(R.string.err_network_ml)
             }
         }
     }
@@ -386,21 +382,14 @@ class ThirdEyeService : LifecycleService() {
         }
     }
 
-    private fun settleWithError(message: String) {
+    private fun settleWithError(@StringRes messageRes: Int) {
+        val message = getString(messageRes)
         stopWaitTicker()
         setUiState(UiState.PROBLEM)
         lastStatus = message
         onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
         errorTone()
         speakLocal("error", message)
-    }
-
-    private fun localError(network: Boolean): String {
-        return if (malayalamTts) {
-            getString(if (network) R.string.err_network_ml else R.string.err_no_photo_ml)
-        } else {
-            getString(if (network) R.string.err_network else R.string.err_no_photo)
-        }
     }
 
     private fun startWaitTicker() {
@@ -441,7 +430,7 @@ class ThirdEyeService : LifecycleService() {
             watchdogTicker = null
             sm?.cancel()?.forEach(::executeAction)
             errorTone()
-            speakLocal("error", localError(true))
+            speakLocal("error", getString(R.string.err_network_ml))
         }
         watchdogTicker = watchdog
         mainHandler.postDelayed(watchdog, 100_000)
@@ -499,7 +488,7 @@ class ThirdEyeService : LifecycleService() {
 
     private fun speakLocal(prefix: String, text: String) {
         val engine = tts
-        if (engine == null) {
+        if (engine == null || !malayalamTtsReady) {
             onSmEvent(TriggerStateMachine.KeyEvent.PlaybackFinished)
             return
         }
@@ -613,27 +602,27 @@ class ThirdEyeService : LifecycleService() {
         prewarmExpiry?.let { mainHandler.removeCallbacks(it) }
         prewarmExpiry = null
         val ready = ensureCapture() ?: return null
-        return withContext(Dispatchers.Main) {
+        return try {
             suspendCancellableCoroutine { cont ->
                 try {
                     ready.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
                         override fun onCaptureSuccess(image: ImageProxy) {
                             val jpeg = imageToJpeg(image)
                             image.close()
-                            unbindCamera()
                             if (cont.isActive) cont.resume(jpeg)
                         }
 
                         override fun onError(exception: ImageCaptureException) {
-                            unbindCamera()
                             if (cont.isActive) cont.resume(null)
                         }
                     })
                 } catch (_: Exception) {
-                    unbindCamera()
                     if (cont.isActive) cont.resume(null)
                 }
             }
+        } finally {
+            // CameraX unbinds on the main thread; capture callbacks run on the encoder executor.
+            unbindCamera()
         }
     }
 
@@ -641,17 +630,14 @@ class ThirdEyeService : LifecycleService() {
         return try {
             val rotation = image.imageInfo.rotationDegrees
             val source = image.toBitmap()
-            val rotated = if (rotation != 0) {
-                val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-                Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
-            } else source
-            val scale = 1280f / maxOf(rotated.width, rotated.height).coerceAtLeast(1)
-            val scaled = if (scale < 1f) {
-                Bitmap.createScaledBitmap(
-                    rotated,
-                    (rotated.width * scale).toInt().coerceAtLeast(1),
-                    (rotated.height * scale).toInt().coerceAtLeast(1), true)
-            } else rotated
+            val scale = (1280f / maxOf(source.width, source.height)).coerceAtMost(1f)
+            val width = (source.width * scale).toInt().coerceAtLeast(1)
+            val height = (source.height * scale).toInt().coerceAtLeast(1)
+            val transform = Matrix().apply {
+                setScale(width.toFloat() / source.width, height.toFloat() / source.height)
+                postRotate(rotation.toFloat())
+            }
+            val scaled = Bitmap.createBitmap(source, 0, 0, source.width, source.height, transform, true)
             val out = java.io.ByteArrayOutputStream()
             scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
             out.toByteArray()

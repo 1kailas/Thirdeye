@@ -10,17 +10,22 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.text.Editable
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextWatcher
+import android.text.style.LocaleSpan
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -35,6 +40,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var startStop: Button
     private lateinit var prefs: SharedPreferences
     private var tts: TextToSpeech? = null
+    private var speechInitialized = false
+    private var malayalamTtsReady = false
+    private var pendingSpeech: String? = null
     private var player: MediaPlayer? = null
     private var subscribedService: ThirdEyeService? = null
     private var lastAnnounced: UiState? = null
@@ -63,8 +71,7 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
-        val missing = grants.filterValues { !it }.keys
-        say(if (missing.isEmpty()) "Permissions granted." else "Still missing: ${missing.joinToString()}")
+        say(if (grants.values.all { it }) R.string.say_permissions_granted else R.string.say_permissions_missing)
         refresh()
     }
 
@@ -78,12 +85,13 @@ class MainActivity : AppCompatActivity() {
         serverUrl.setText(prefs.getString("server_url", ""))
         token.setText(prefs.getString("token", ""))
         tts = TextToSpeech(this) { result ->
-            if (result == TextToSpeech.SUCCESS) {
-                val engine = tts ?: return@TextToSpeech
-                val malayalam = engine.setLanguage(Locale.forLanguageTag("ml-IN"))
-                if (malayalam == TextToSpeech.LANG_MISSING_DATA || malayalam == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    engine.language = Locale.getDefault()
-                }
+            Handler(Looper.getMainLooper()).post {
+                val engine = tts ?: return@post
+                speechInitialized = true
+                malayalamTtsReady = result == TextToSpeech.SUCCESS &&
+                    engine.setLanguage(MALAYALAM) >= TextToSpeech.LANG_AVAILABLE
+                pendingSpeech?.let(::speak)
+                pendingSpeech = null
             }
         }
         val watcher = object : TextWatcher {
@@ -104,7 +112,10 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
         replayAnswer.setOnClickListener { replayLastAnswer() }
-        findViewById<View>(R.id.testButton).setOnTouchListener(testTouch)
+        findViewById<View>(R.id.testButton).apply {
+            contentDescription = malayalamText(getString(R.string.tryit_description))
+            setOnTouchListener(testTouch)
+        }
         handlePairing(intent)
     }
 
@@ -116,6 +127,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        subscribeToService()
+    }
+
+    private fun subscribeToService() {
         val service = ThirdEyeService.instance
         if (service != subscribedService) {
             subscribedService?.removeStateListener(stateListener)
@@ -152,13 +167,13 @@ class MainActivity : AppCompatActivity() {
         val text = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
         val pairing = PairingLink.parse(text)
         if (pairing == null) {
-            say("No pairing link found on the clipboard. Copy the link text from the pairing page first.")
+            say(R.string.say_pairing_link_missing)
             return
         }
         serverUrl.setText(pairing.baseUrl)
         token.setText(pairing.token)
         persist()
-        say("Paired with your computer. Tap Start service.")
+        say(R.string.say_paired)
     }
 
     private fun handlePairing(intent: Intent?) {
@@ -166,13 +181,13 @@ class MainActivity : AppCompatActivity() {
         if (data.scheme != "thirdeye") return
         val pairing = PairingLink.parse(data.toString())
         if (pairing == null) {
-            say("Pairing link is invalid. Scan the QR code on the computer again.")
+            say(R.string.say_pairing_link_invalid)
             return
         }
         serverUrl.setText(pairing.baseUrl)
         token.setText(pairing.token)
         persist()
-        say("Paired with your computer. Tap Start service.")
+        say(R.string.say_paired)
     }
 
     // ---- persistence ----
@@ -205,14 +220,18 @@ class MainActivity : AppCompatActivity() {
         permissionsGranted() && accessibilityEnabled() && linkConfigured()
 
     private fun refresh() {
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) subscribeToService()
         val perms = permissionsGranted()
         permStatus.text = getString(if (perms) R.string.status_done else R.string.status_missing)
         permIcon.setImageResource(if (perms) R.drawable.ic_check else R.drawable.ic_warn)
 
         val keyOn = accessibilityEnabled()
+        findViewById<View>(R.id.allowRestricted).visibility = if (keyOn) View.GONE else View.VISIBLE
         keyStatus.text = if (keyOn) getString(R.string.status_done)
             else getString(R.string.status_missing)
         keyIcon.setImageResource(if (keyOn) R.drawable.ic_check else R.drawable.ic_warn)
+        findViewById<Button>(R.id.keyAction).text =
+            getString(if (keyOn) R.string.action_manage else R.string.action_enable)
 
         val linked = linkConfigured()
         linkStatus.text = getString(if (linked) R.string.status_done else R.string.status_missing)
@@ -223,15 +242,15 @@ class MainActivity : AppCompatActivity() {
         val running = ThirdEyeService.instance != null
         svcStatus.text = getString(if (running) R.string.status_running else R.string.status_stopped)
         svcIcon.setImageResource(if (running) R.drawable.ic_check else R.drawable.ic_warn)
-        startStop.text = getString(if (running) R.string.action_stop else R.string.action_start)
+        startStop.text = malayalamText(getString(if (running) R.string.action_stop else R.string.action_start))
         startStop.contentDescription = startStop.text
 
-        renderHero(ThirdEyeService.instance?.uiState ?: UiState.READY)
+        renderHero(ThirdEyeService.instance?.uiState ?: UiState.READY, perms && keyOn && linked)
     }
 
     private fun onLinkAction() {
         if (linkConfigured()) {
-            say("Edit the server address and token below, then test the connection.")
+            say(R.string.say_edit_connection)
             serverUrl.requestFocus()
         } else {
             pastePairingLink()
@@ -252,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         val missing = wanted.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isEmpty()) say("All permissions already granted.") else permissionLauncher.launch(missing.toTypedArray())
+        if (missing.isEmpty()) say(R.string.say_permissions_granted) else permissionLauncher.launch(missing.toTypedArray())
     }
 
     private fun permissionsGranted(): Boolean {
@@ -267,25 +286,28 @@ class MainActivity : AppCompatActivity() {
         persist()
         if (ThirdEyeService.instance != null) {
             startService(Intent(this, ThirdEyeService::class.java).setAction(ThirdEyeService.ACTION_STOP))
-            say("Service stopped.")
+            say(R.string.say_service_stopped)
+            refreshSoon()
             return
         }
         if (!permissionsGranted()) {
-            say("Grant camera, microphone and notification permissions first.")
+            say(R.string.say_permissions_missing)
             requestPermissions()
             return
         }
         val url = prefs.getString("server_url", "").orEmpty()
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            say("Enter a server address starting with http:// or https://")
+            say(R.string.say_server_address_invalid)
             return
         }
         ContextCompat.startForegroundService(this, Intent(this, ThirdEyeService::class.java))
-        if (accessibilityEnabled()) {
-            say("Service started. Use Volume Up, or the on-screen Test button.")
-        } else {
-            say("Service started. Volume Up needs the accessibility key service; the on-screen Test button works without it.")
-        }
+        refreshSoon()
+        say(if (accessibilityEnabled()) R.string.say_service_started else R.string.say_service_started_key_off)
+    }
+
+    private fun refreshSoon() {
+        window.decorView.postDelayed({ refresh() }, 400)
+        window.decorView.postDelayed({ refresh() }, 1200)
     }
 
     private fun openAppInfo() {
@@ -295,8 +317,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun openAccessibility() {
         if (!accessibilityEnabled()) {
-            keyStatus.text = RESTRICTED_GUIDANCE
-            say(RESTRICTED_GUIDANCE)
+            keyStatus.text = malayalamText(getString(R.string.say_enable_key_service))
+            say(R.string.say_enable_key_service)
         }
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
@@ -308,12 +330,12 @@ class MainActivity : AppCompatActivity() {
         val url = prefs.getString("server_url", "").orEmpty()
         val key = prefs.getString("token", "").orEmpty()
         if (!url.startsWith("http://") && !url.startsWith("https://") || key.isEmpty()) {
-            say("Set a valid server address and token first.")
+            say(R.string.say_connection_settings_missing)
             return
         }
         connStatus.visibility = View.VISIBLE
         connStatus.text = getString(R.string.conn_testing)
-        say("Testing connection…")
+        say(R.string.say_connection_testing)
         Thread {
             val result = PhoneApi(url, key).ping()
             runOnUiThread {
@@ -321,23 +343,23 @@ class MainActivity : AppCompatActivity() {
                     result == null -> {
                         connStatus.text = "● " + getString(R.string.conn_unreachable)
                         connStatus.setTextColor(ContextCompat.getColor(this, R.color.error_light))
-                        say("Server unreachable. Is the PC app running?")
+                        say(R.string.err_network_ml)
                     }
                     result.httpCode == 401 -> {
                         connStatus.text = "● " + getString(R.string.conn_token_rejected)
                         connStatus.setTextColor(ContextCompat.getColor(this, R.color.brand_accent))
-                        say("Server answered but rejected the token.")
+                        say(R.string.say_connection_token_rejected)
                     }
                     result.ok -> {
                         connStatus.text = "● " + getString(
                             if (result.aiReady) R.string.conn_connected else R.string.conn_ai_not_ready)
                         connStatus.setTextColor(ContextCompat.getColor(this, R.color.success_light))
-                        say("Connected. AI ready: ${if (result.aiReady) "yes" else "no key"}.")
+                        say(if (result.aiReady) R.string.say_connected else R.string.say_connected_no_key)
                     }
                     else -> {
                         connStatus.text = "● " + getString(R.string.conn_unreachable)
                         connStatus.setTextColor(ContextCompat.getColor(this, R.color.error_light))
-                        say("Server answered HTTP ${result.httpCode}.")
+                        say(R.string.say_connection_http_error, result.httpCode)
                     }
                 }
             }
@@ -346,8 +368,8 @@ class MainActivity : AppCompatActivity() {
 
     // ---- hero / last answer ----
 
-    private fun renderHero(raw: UiState) {
-        val state = UiStateLogic.hero(ThirdEyeService.instance != null, setupComplete(), raw)
+    private fun renderHero(raw: UiState, configured: Boolean = setupComplete()) {
+        val state = UiStateLogic.hero(ThirdEyeService.instance != null, configured, raw)
         val (iconRes, stateRes, explainRes) = when (state) {
             UiState.SETUP_NEEDED -> Triple(R.drawable.ic_hero_setup, R.string.state_setup, R.string.state_setup_explain)
             UiState.READY -> Triple(R.drawable.ic_hero_ready, R.string.state_ready, R.string.state_ready_explain)
@@ -357,8 +379,8 @@ class MainActivity : AppCompatActivity() {
             UiState.PROBLEM -> Triple(R.drawable.ic_hero_problem, R.string.state_problem, R.string.state_problem_explain)
         }
         heroIcon.setImageResource(iconRes)
-        heroState.text = getString(stateRes)
-        heroExplain.text = getString(explainRes)
+        heroState.text = malayalamText(getString(stateRes))
+        heroExplain.text = malayalamText(getString(explainRes))
         if (state == UiState.PROBLEM) {
             ThirdEyeService.instance?.lastStatus()?.takeIf { it.isNotEmpty() }?.let {
                 heroExplain.text = it.take(120)
@@ -395,7 +417,7 @@ class MainActivity : AppCompatActivity() {
         val turn = History(File(filesDir, "history")).list().firstOrNull()
         val audio = turn?.let { History(File(filesDir, "history")).audioFile(it) }
         if (audio == null || !audio.isFile) {
-            say("No recording to replay.")
+            say(R.string.say_no_recording)
             return
         }
         player?.release()
@@ -407,23 +429,32 @@ class MainActivity : AppCompatActivity() {
                 start()
             }
         } catch (_: Exception) {
-            say("Could not play the recording.")
+            say(R.string.say_recording_failed)
             null
         }
     }
 
     // ---- misc ----
 
-    private fun say(text: String) {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ui")
-        Snackbar.make(findViewById(android.R.id.content), text, Snackbar.LENGTH_LONG).show()
+    private fun say(@StringRes message: Int, vararg args: Any) {
+        val text = getString(message, *args)
+        if (speechInitialized) speak(text) else pendingSpeech = text
+        Snackbar.make(findViewById(android.R.id.content), malayalamText(text), Snackbar.LENGTH_LONG).show()
+    }
+
+    private fun speak(text: String) {
+        if (malayalamTtsReady) tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ui")
+    }
+
+    private fun malayalamText(text: String): CharSequence = SpannableString(text).apply {
+        setSpan(LocaleSpan(MALAYALAM), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     private val testTouch = View.OnTouchListener { _, event ->
         val service = ThirdEyeService.instance
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
-                if (service == null) say("Start the service first.") else service.onKeyDown(0)
+                if (service == null) say(R.string.say_start_service_first) else service.onKeyDown(0)
                 true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -435,9 +466,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val RESTRICTED_GUIDANCE = "Key service: off. If the service is greyed out in " +
-            "Accessibility settings: tap Allow restricted settings, then in the App info page " +
-            "open the ⋮ menu (top right) and choose Allow restricted settings, then come back " +
-            "and enable DrishtiGuide."
+        val MALAYALAM: Locale = Locale.forLanguageTag("ml-IN")
     }
 }

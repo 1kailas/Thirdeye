@@ -16,7 +16,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.google.android.material.card.MaterialCardView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -25,6 +31,7 @@ import java.util.Locale
 
 class HistoryActivity : AppCompatActivity() {
 
+    private val screenScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var history: History
     private var tts: TextToSpeech? = null
     private var player: MediaPlayer? = null
@@ -53,6 +60,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        screenScope.cancel()
         player?.release()
         player = null
         tts?.shutdown()
@@ -63,6 +71,7 @@ class HistoryActivity : AppCompatActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun rebuild() {
+        screenScope.coroutineContext.cancelChildren()
         container.removeAllViews()
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -72,7 +81,6 @@ class HistoryActivity : AppCompatActivity() {
             text = "Debug history"
             textSize = 22f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(this@HistoryActivity, android.R.color.white))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         header.addView(Button(this).apply {
@@ -89,7 +97,13 @@ class HistoryActivity : AppCompatActivity() {
             }
         })
         container.addView(header)
-        val turns = history.list()
+        screenScope.launch {
+            val turns = withContext(Dispatchers.IO) { history.list() }
+            renderTurns(turns)
+        }
+    }
+
+    private fun renderTurns(turns: List<History.Turn>) {
         if (turns.isEmpty()) {
             container.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -125,7 +139,7 @@ class HistoryActivity : AppCompatActivity() {
         }
         card.addView(inner)
         val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(turn.timestamp))
-        inner.addView(chipRow(turn, time))
+        inner.addView(android.widget.HorizontalScrollView(this).apply { addView(chipRow(turn, time)) })
         turn.transcript?.let {
             inner.addView(TextView(this).apply {
                 text = "You: $it"
@@ -140,17 +154,22 @@ class HistoryActivity : AppCompatActivity() {
             setPadding(0, dp(4), 0, 0)
         })
         val imageFile = history.imageFile(turn)
-        if (imageFile.isFile) {
-            val bitmap = decodeSampled(imageFile, 480)
+        val thumbnail = ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(0, dp(12), 0, 0)
+            visibility = View.GONE
+            contentDescription = "Uploaded photo for request at $time. Tap to enlarge."
+            setOnClickListener { showFullImage(imageFile) }
+        }
+        inner.addView(thumbnail)
+        screenScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                if (imageFile.isFile) decodeSampled(imageFile, 480) else null
+            }
             if (bitmap != null) {
-                inner.addView(ImageView(this).apply {
-                    setImageBitmap(bitmap)
-                    adjustViewBounds = true
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    setPadding(0, dp(12), 0, 0)
-                    contentDescription = "Uploaded photo for request at $time. Tap to enlarge."
-                    setOnClickListener { showFullImage(imageFile) }
-                })
+                thumbnail.setImageBitmap(bitmap)
+                thumbnail.visibility = View.VISIBLE
             }
         }
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }

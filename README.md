@@ -18,8 +18,9 @@
 > Built at **HackaThoni · The Houseboat Hackathon** (Alappuzha, 21-22 Nov 2026) for **Track 03 "Beyond the Screen"**, with a cross-track in **Track 02 "Beyond English"**. See [Hackathon track](#hackathon-track).
 
 <p align="center">
-  <img src="docs/images/app-main.png" alt="The DrishtiGuide Android app: setup checklist, connection card, how-to-use and the try-it button" width="560">
-  <br><em>The Android client (Material 3, dark mode, TalkBack-friendly). The server address is redacted.</em>
+  <img src="docs/images/app-main.png" alt="DrishtiGuide in light mode with the Malayalam microphone control and service setup checklist" width="320" align="top">
+  <img src="docs/images/app-speaking-dark.png" alt="DrishtiGuide in dark mode speaking a reply, with Malayalam instructions for interrupting it using Volume Up" width="320" align="top">
+  <br><em>On a Realme RMX3870. The light screen shows setup. The dark screen shows the assistant speaking a reply.</em>
 </p>
 
 ---

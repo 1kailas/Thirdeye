@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="18dp">
 
         <!-- Header -->
         <LinearLayout
@@ -22,6 +22,7 @@
                 android:layout_width="44dp"
                 android:layout_height="44dp"
                 android:importantForAccessibility="no"
+                android:background="@drawable/status_panel"
                 android:src="@drawable/ic_launcher_foreground" />
 
             <LinearLayout
@@ -35,66 +36,77 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/app_name"
-                    android:textSize="28sp"
+                    android:textSize="30sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="-0.025"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:textColor="?attr/colorOnSurfaceVariant"
                     android:text="@string/subtitle"
                     android:textSize="14sp" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Hero status card -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- Live status and the tap/hold control -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="1dp">
+            android:layout_marginTop="20dp"
+            android:background="@drawable/status_panel"
+            android:orientation="vertical"
+            android:padding="20dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="20dp">
-
+                android:orientation="horizontal">
                 <ImageView
                     android:id="@+id/heroIcon"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
                     android:importantForAccessibility="no"
+                    app:tint="#DCD1FF"
                     app:srcCompat="@drawable/ic_hero_ready" />
-
-                <LinearLayout
+                <TextView
+                    android:id="@+id/heroState"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:id="@+id/heroState"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/state_ready"
-                        android:textSize="22sp"
-                        android:textStyle="bold"
-                        android:accessibilityLiveRegion="polite"
-                        android:accessibilityHeading="true" />
-
-                    <TextView
-                        android:id="@+id/heroExplain"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="@string/state_ready_explain"
-                        android:textSize="14sp" />
-                </LinearLayout>
+                    android:accessibilityHeading="true"
+                    android:accessibilityLiveRegion="polite"
+                    android:text="@string/state_ready"
+                    android:textColor="#FFFFFF"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            <TextView
+                android:id="@+id/heroExplain"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/state_ready_explain"
+                android:textColor="#EBE6FF"
+                android:textSize="16sp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/testButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:minHeight="56dp"
+                android:text="@string/tryit_action"
+                android:textColor="#231F41"
+                android:contentDescription="@string/tryit_description"
+                app:backgroundTint="#DAD1FF"
+                app:cornerRadius="14dp"
+                app:icon="@drawable/ic_mic"
+                app:iconGravity="textStart"
+                app:iconTint="#231F41" />
+        </LinearLayout>
 
         <!-- Setup checklist card -->
         <com.google.android.material.card.MaterialCardView
@@ -102,7 +114,10 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             app:cardCornerRadius="20dp"
-            app:cardElevation="1dp">
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -151,6 +166,7 @@
                     </LinearLayout>
                     <Button
                         android:id="@+id/permAction"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
@@ -191,6 +207,7 @@
                     </LinearLayout>
                     <Button
                         android:id="@+id/keyAction"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
@@ -240,6 +257,7 @@
                     </LinearLayout>
                     <Button
                         android:id="@+id/linkAction"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
@@ -283,8 +301,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
-                        android:text="@string/action_start"
-                        android:contentDescription="Start or stop the DrishtiGuide trigger service" />
+                        android:text="@string/action_start" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -295,7 +312,10 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             app:cardCornerRadius="20dp"
-            app:cardElevation="1dp">
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -392,7 +412,10 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             app:cardCornerRadius="20dp"
-            app:cardElevation="1dp">
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -457,46 +480,16 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Try it -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:gravity="center_horizontal"
-            android:orientation="vertical">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/testButton"
-                android:layout_width="120dp"
-                android:layout_height="120dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:minHeight="120dp"
-                android:minWidth="120dp"
-                android:padding="0dp"
-                android:text=""
-                app:cornerRadius="60dp"
-                app:icon="@drawable/ic_mic"
-                app:iconGravity="textStart"
-                app:iconSize="44dp"
-                app:iconPadding="0dp"
-                android:contentDescription="Test button. Tap to take a photo, press and hold to ask with voice." />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/tryit_caption"
-                android:textSize="14sp" />
-        </LinearLayout>
-
         <!-- Last answer card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             app:cardCornerRadius="20dp"
-            app:cardElevation="1dp">
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"

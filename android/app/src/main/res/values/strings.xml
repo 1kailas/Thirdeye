@@ -2,44 +2,45 @@
 <resources>
     <string name="app_name">DrishtiGuide</string>
     <string name="subtitle">Thirdeye · hands-free visual assistant</string>
-    <string name="accessibility_description">Lets DrishtiGuide detect Volume Up presses (quick press or press and hold) so you can take a photo and ask a question without touching the screen. It does not read your screen.</string>
+    <string name="accessibility_description">സ്ക്രീനിൽ തൊടാതെ ഫോട്ടോ എടുക്കാനും ചോദ്യങ്ങൾ ചോദിക്കാനും ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഉപയോഗിക്കാം. ദൃഷ്ടിഗൈഡ് സ്ക്രീനിലെ ഉള്ളടക്കം വായിക്കില്ല.</string>
     <string name="notification_channel">thirdeye_trigger</string>
     <string name="notification_channel_name">DrishtiGuide trigger</string>
-    <string name="notification_title">DrishtiGuide is listening</string>
-    <string name="notification_text">Press and hold Volume Up to ask with voice, or tap for a photo.</string>
-    <string name="notification_stop">Stop</string>
+    <string name="notification_title">ദൃഷ്ടിഗൈഡ് തയ്യാറാണ്</string>
+    <string name="notification_text">ഫോട്ടോ എടുക്കാൻ ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഒന്ന് അമർത്തുക. ചോദ്യം ചോദിക്കാൻ അമർത്തിപ്പിടിക്കുക.</string>
+    <string name="notification_stop">നിർത്തുക</string>
 
     <!-- Hero states -->
-    <string name="state_setup">Setup needed</string>
-    <string name="state_setup_explain">Finish the checklist below to start using the volume key.</string>
-    <string name="state_ready">Ready</string>
-    <string name="state_ready_explain">Press Volume Up to look, hold to ask.</string>
-    <string name="state_listening">Listening…</string>
-    <string name="state_listening_explain">Keep holding Volume Up and speak your question.</string>
-    <string name="state_looking">Looking…</string>
-    <string name="state_looking_explain">Taking the photo and asking the computer.</string>
-    <string name="state_speaking">Speaking…</string>
-    <string name="state_speaking_explain">Playing the answer. Press Volume Up to interrupt.</string>
-    <string name="state_problem">Problem</string>
-    <string name="state_problem_explain">Something went wrong. See the message below.</string>
+    <string name="state_setup">സജ്ജീകരണം പൂർത്തിയാക്കണം</string>
+    <string name="state_setup_explain">ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഉപയോഗിക്കാൻ താഴെയുള്ള സജ്ജീകരണങ്ങൾ പൂർത്തിയാക്കുക.</string>
+    <string name="state_ready">തയ്യാറാണ്</string>
+    <string name="state_ready_explain">ഫോട്ടോ എടുക്കാൻ ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഒന്ന് അമർത്തുക. ചോദ്യം ചോദിക്കാൻ അമർത്തിപ്പിടിക്കുക.</string>
+    <string name="state_listening">കേൾക്കുന്നു…</string>
+    <string name="state_listening_explain">ശബ്ദം കൂട്ടുന്ന ബട്ടൺ അമർത്തിപ്പിടിച്ച് ചോദ്യം പറയുക.</string>
+    <string name="state_looking">പരിശോധിക്കുന്നു…</string>
+    <string name="state_looking_explain">ഫോട്ടോ എടുത്ത് കമ്പ്യൂട്ടറിലേക്ക് അയയ്ക്കുന്നു.</string>
+    <string name="state_speaking">മറുപടി പറയുന്നു…</string>
+    <string name="state_speaking_explain">മറുപടി നിർത്താൻ ശബ്ദം കൂട്ടുന്ന ബട്ടൺ അമർത്തുക.</string>
+    <string name="state_problem">ഒരു പ്രശ്നമുണ്ടായി</string>
+    <string name="state_problem_explain">കൂടുതൽ വിവരങ്ങൾക്ക് താഴെയുള്ള സന്ദേശം നോക്കുക.</string>
 
     <!-- Setup checklist -->
     <string name="setup_title">Setup</string>
     <string name="row_permissions">Permissions</string>
     <string name="row_key_service">Key service</string>
     <string name="row_computer_link">Computer link</string>
-    <string name="row_service">Service</string>
+    <string name="row_service">സേവനം</string>
     <string name="status_missing">Not done yet</string>
     <string name="status_done">Done</string>
-    <string name="status_stopped">Stopped</string>
-    <string name="status_running">Running</string>
+    <string name="status_stopped">നിർത്തിയിരിക്കുന്നു</string>
+    <string name="status_running">പ്രവർത്തിക്കുന്നു</string>
     <string name="action_grant">Grant</string>
     <string name="action_enable">Enable</string>
+    <string name="action_manage">Settings</string>
     <string name="action_allow_restricted">Greyed out? Allow restricted settings</string>
     <string name="action_pair">Pair</string>
     <string name="action_edit">Edit</string>
-    <string name="action_start">Start</string>
-    <string name="action_stop">Stop</string>
+    <string name="action_start">തുടങ്ങുക</string>
+    <string name="action_stop">നിർത്തുക</string>
 
     <!-- Connection card -->
     <string name="conn_title">Computer connection</string>
@@ -58,10 +59,33 @@
 
     <!-- How to use -->
     <string name="howto_title">How to use</string>
-    <string name="howto_quick">Quick press · Volume Up — take a photo and hear what is in front of you</string>
-    <string name="howto_hold">Press and hold — ask a question while holding, release to hear the answer</string>
+    <string name="howto_quick">മുന്നിലുള്ളത് എന്താണെന്ന് കേൾക്കാൻ ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഒന്ന് അമർത്തുക.</string>
+    <string name="howto_hold">ബട്ടൺ അമർത്തിപ്പിടിച്ച് ചോദ്യം പറയുക. മറുപടി കേൾക്കാൻ ബട്ടൺ വിടുക.</string>
     <string name="howto_commands">Say: stop · repeat · done · next</string>
-    <string name="tryit_caption">Tap to look · Hold to ask</string>
+    <string name="tryit_action">ഫോട്ടോ എടുക്കുക · പിടിച്ചുവച്ച് ചോദിക്കുക</string>
+    <string name="tryit_description">പരീക്ഷണ ബട്ടൺ. ഫോട്ടോ എടുക്കാൻ ഒന്ന് അമർത്തുക. ചോദ്യം ചോദിക്കാൻ അമർത്തിപ്പിടിക്കുക.</string>
+
+    <!-- Spoken app feedback -->
+    <string name="say_service_started">സേവനം തുടങ്ങി. ശബ്ദം കൂട്ടുന്ന ബട്ടണോ സ്ക്രീനിലെ പരീക്ഷണ ബട്ടണോ ഉപയോഗിക്കാം.</string>
+    <string name="say_service_started_key_off">സേവനം തുടങ്ങി. ശബ്ദം കൂട്ടുന്ന ബട്ടൺ ഉപയോഗിക്കാൻ ആക്‌സസിബിലിറ്റി ക്രമീകരണങ്ങളിൽ ദൃഷ്ടിഗൈഡ് പ്രവർത്തനക്ഷമമാക്കുക. ഇപ്പോൾ സ്ക്രീനിലെ പരീക്ഷണ ബട്ടൺ ഉപയോഗിക്കാം.</string>
+    <string name="say_service_stopped">സേവനം നിർത്തി.</string>
+    <string name="say_start_service_first">ആദ്യം സേവനം തുടങ്ങുക.</string>
+    <string name="say_permissions_granted">ആവശ്യമായ അനുമതികൾ ലഭിച്ചു.</string>
+    <string name="say_permissions_missing">ക്യാമറ, മൈക്രോഫോൺ, അറിയിപ്പുകൾ എന്നിവയ്ക്കുള്ള അനുമതികൾ നൽകുക.</string>
+    <string name="say_pairing_link_missing">പെയറിങ് ലിങ്ക് കിട്ടിയില്ല. പെയറിങ് പേജിൽനിന്ന് ലിങ്ക് പകർത്തി വീണ്ടും ശ്രമിക്കുക.</string>
+    <string name="say_pairing_link_invalid">പെയറിങ് ലിങ്ക് ശരിയല്ല. കമ്പ്യൂട്ടറിലെ ക്യു ആർ കോഡ് വീണ്ടും സ്കാൻ ചെയ്യുക.</string>
+    <string name="say_paired">കമ്പ്യൂട്ടറുമായി ബന്ധിപ്പിച്ചു. സേവനം തുടങ്ങാനുള്ള ബട്ടൺ അമർത്തുക.</string>
+    <string name="say_edit_connection">താഴെ സെർവർ വിലാസവും ടോക്കണും തിരുത്തിയ ശേഷം കണക്ഷൻ പരിശോധിക്കുക.</string>
+    <string name="say_server_address_invalid">എച്ച് ടി ടി പി അല്ലെങ്കിൽ എച്ച് ടി ടി പി എസ് എന്ന് തുടങ്ങുന്ന സെർവർ വിലാസം നൽകുക.</string>
+    <string name="say_enable_key_service">ബട്ടൺ സേവനം ഓഫാണ്. ആക്‌സസിബിലിറ്റി ക്രമീകരണങ്ങളിൽ ദൃഷ്ടിഗൈഡ് ഓണാക്കാൻ കഴിയുന്നില്ലെങ്കിൽ, ആപ്പിന്റെ വിവര പേജിലെ മുകളിൽ വലതുവശത്തുള്ള മൂന്ന് കുത്തുകൾ അമർത്തുക. അവിടെ നിയന്ത്രിത ക്രമീകരണങ്ങൾ അനുവദിച്ച ശേഷം തിരികെ വന്ന് ദൃഷ്ടിഗൈഡ് ഓണാക്കുക.</string>
+    <string name="say_connection_settings_missing">ശരിയായ സെർവർ വിലാസവും ടോക്കണും നൽകുക.</string>
+    <string name="say_connection_testing">കണക്ഷൻ പരിശോധിക്കുന്നു.</string>
+    <string name="say_connection_token_rejected">സെർവർ ടോക്കൺ സ്വീകരിച്ചില്ല. ടോക്കൺ പരിശോധിക്കുക.</string>
+    <string name="say_connected">സെർവറുമായി ബന്ധിപ്പിച്ചു. എ ഐ തയ്യാറാണ്.</string>
+    <string name="say_connected_no_key">സെർവറുമായി ബന്ധിപ്പിച്ചു. കമ്പ്യൂട്ടറിൽ എ ഐ കീ നൽകിയിട്ടില്ല.</string>
+    <string name="say_connection_http_error">സെർവറിൽ നിന്ന് ലഭിച്ച പിശക് കോഡ് %1$d.</string>
+    <string name="say_no_recording">വീണ്ടും കേൾക്കാൻ റെക്കോർഡിങ് ഒന്നുമില്ല.</string>
+    <string name="say_recording_failed">റെക്കോർഡിങ് കേൾപ്പിക്കാൻ കഴിഞ്ഞില്ല.</string>
 
     <!-- Last answer -->
     <string name="last_answer_title">Last answer</string>
@@ -71,8 +95,6 @@
     <string name="action_history">Open debug history</string>
 
     <!-- Errors / TTS -->
-    <string name="err_no_photo">Photo capture failed. Try again.</string>
-    <string name="err_network">Server unreachable. Check the address and that the PC app is running.</string>
     <string name="err_no_photo_ml">ഫോട്ടോ എടുക്കാൻ കഴിഞ്ഞില്ല. വീണ്ടും ശ്രമിക്കുക.</string>
-    <string name="err_network_ml">സെർവറിൽ എത്താനായില്ല. വിലാസം പരിശോധിക്കുക, കമ്പ്യൂട്ടറിലെ ആപ്പ് ഓണാണെന്ന് ഉറപ്പാക്കുക.</string>
+    <string name="err_network_ml">സെർവറുമായി ബന്ധപ്പെടാനായില്ല. വിലാസം പരിശോധിക്കുക. കമ്പ്യൂട്ടറിലെ ആപ്പ് പ്രവർത്തിക്കുന്നുണ്ടെന്ന് ഉറപ്പാക്കുക.</string>
 </resources>
