@@ -41,6 +41,7 @@ class TriggerStateMachine(
     private enum class State { IDLE, PRESSED, HOLDING, SENDING, PLAYING }
 
     private var state = State.IDLE
+    val acceptsPress: Boolean get() = state == State.IDLE || state == State.PLAYING
     private var holdStartedAt = 0L
 
     fun onEvent(event: KeyEvent): List<SmAction> {

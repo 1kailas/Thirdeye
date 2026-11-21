@@ -26,6 +26,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import android.util.Base64
 import androidx.annotation.StringRes
 import androidx.camera.core.CameraSelector
@@ -41,6 +42,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -88,7 +91,6 @@ class ThirdEyeService : LifecycleService() {
 
     private var photoJob: Deferred<ByteArray?>? = null
     private val cameraMutex = Mutex()
-    private var prewarmExpiry: Runnable? = null
     private var requestSeq = 0
     private var partQueue: AudioPartQueue? = null
     private var capture: ImageCapture? = null
@@ -155,10 +157,12 @@ class ThirdEyeService : LifecycleService() {
     override fun onDestroy() {
         shutdown()
         instance = null
+        cameraExecutor.shutdown()
         super.onDestroy()
     }
 
     private fun shutdown() {
+        scope.cancel()
         sm?.cancel()?.forEach(::executeAction)
         stopRecordingInternal()
         releasePlayer()
@@ -173,7 +177,6 @@ class ThirdEyeService : LifecycleService() {
 
     fun onKeyDown(repeatCount: Int) {
         tick()
-        if (repeatCount == 0) prewarmCamera()
         onSmEvent(TriggerStateMachine.KeyEvent.KeyDown(repeatCount))
     }
 
@@ -183,9 +186,13 @@ class ThirdEyeService : LifecycleService() {
 
     private fun onSmEvent(event: TriggerStateMachine.KeyEvent) {
         mainHandler.post {
-            val actions = sm?.onEvent(event).orEmpty()
+            val machine = sm ?: return@post
+            if (event is TriggerStateMachine.KeyEvent.KeyDown && event.repeatCount == 0 && machine.acceptsPress) {
+                prewarmCamera()
+            }
+            val actions = machine.onEvent(event)
             actions.forEach(::executeAction)
-            if (event == TriggerStateMachine.KeyEvent.PlaybackFinished) setUiState(UiState.READY)
+            if (event == TriggerStateMachine.KeyEvent.PlaybackFinished && uiState == UiState.SPEAKING) setUiState(UiState.READY)
         }
     }
 
@@ -194,8 +201,7 @@ class ThirdEyeService : LifecycleService() {
             TriggerStateMachine.SmAction.TakePhotoThenSend -> requestJob {
                 if (recording) stopRecordingInternal()
                 setUiState(UiState.LOOKING)
-                val jpeg = photoJob?.await() ?: capturePhoto()
-                photoJob = null
+                val jpeg = finishPhoto()
                 if (jpeg == null) {
                     settleWithError(R.string.err_no_photo_ml)
                 } else {
@@ -212,8 +218,7 @@ class ThirdEyeService : LifecycleService() {
             TriggerStateMachine.SmAction.FinishHold -> requestJob {
                 setUiState(UiState.LOOKING)
                 val wav = stopRecording()
-                val jpeg = photoJob?.await() ?: capturePhoto()
-                photoJob = null
+                val jpeg = finishPhoto()
                 if (jpeg == null) {
                     settleWithError(R.string.err_no_photo_ml)
                 } else {
@@ -385,8 +390,9 @@ class ThirdEyeService : LifecycleService() {
     private fun settleWithError(@StringRes messageRes: Int) {
         val message = getString(messageRes)
         stopWaitTicker()
-        setUiState(UiState.PROBLEM)
+        stopWatchdog()
         lastStatus = message
+        setUiState(UiState.PROBLEM)
         onSmEvent(TriggerStateMachine.KeyEvent.RequestFinished)
         errorTone()
         speakLocal("error", message)
@@ -556,6 +562,7 @@ class ThirdEyeService : LifecycleService() {
                 try {
                     val future = ProcessCameraProvider.getInstance(this@ThirdEyeService)
                     future.addListener({
+                        if (!cont.isActive) return@addListener
                         try {
                             val provider = future.get()
                             cameraProvider = provider
@@ -566,7 +573,6 @@ class ThirdEyeService : LifecycleService() {
                                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                                 .setFlashMode(ImageCapture.FLASH_MODE_AUTO)
                                 .build()
-                            provider.unbindAll()
                             provider.bindToLifecycle(this@ThirdEyeService, selector, bound)
                             capture = bound
                             if (cont.isActive) cont.resume(bound)
@@ -584,45 +590,46 @@ class ThirdEyeService : LifecycleService() {
 
     private fun prewarmCamera() {
         if (capture != null || !cameraAllowed()) return
-        scope.launch {
-            if (ensureCapture() != null) {
-                prewarmExpiry?.let { mainHandler.removeCallbacks(it) }
-                val expiry = Runnable {
-                    prewarmExpiry = null
-                    if (photoJob == null) unbindCamera()
-                }
-                prewarmExpiry = expiry
-                mainHandler.postDelayed(expiry, 4_000)
-            }
-        }
+        scope.launch { withTimeoutOrNull(CAMERA_ATTEMPT_MS) { ensureCapture() } }
+    }
+
+    private suspend fun finishPhoto(): ByteArray? {
+        val pending = photoJob
+        photoJob = null
+        return if (pending != null) pending.await() else capturePhoto()
     }
 
     private suspend fun capturePhoto(): ByteArray? {
         if (!cameraAllowed()) return null
-        prewarmExpiry?.let { mainHandler.removeCallbacks(it) }
-        prewarmExpiry = null
-        val ready = ensureCapture() ?: return null
-        return try {
-            suspendCancellableCoroutine { cont ->
-                try {
+        return captureWithRetry(CAMERA_ATTEMPT_MS) { attempt ->
+            try {
+                val ready = ensureCapture() ?: return@captureWithRetry null
+                suspendCancellableCoroutine { cont ->
                     ready.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
                         override fun onCaptureSuccess(image: ImageProxy) {
-                            val jpeg = imageToJpeg(image)
-                            image.close()
+                            val jpeg = try {
+                                if (cont.isActive) imageToJpeg(image) else null
+                            } finally {
+                                image.close()
+                            }
                             if (cont.isActive) cont.resume(jpeg)
                         }
 
                         override fun onError(exception: ImageCaptureException) {
+                            Log.w("DrishtiGuide", "Camera attempt $attempt failed: code ${exception.imageCaptureError}")
                             if (cont.isActive) cont.resume(null)
                         }
                     })
-                } catch (_: Exception) {
-                    if (cont.isActive) cont.resume(null)
                 }
+            } catch (cancelled: CancellationException) {
+                Log.i("DrishtiGuide", "Camera attempt $attempt cancelled or timed out")
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w("DrishtiGuide", "Unable to capture photo", failure)
+                null
+            } finally {
+                unbindCamera()
             }
-        } finally {
-            // CameraX unbinds on the main thread; capture callbacks run on the encoder executor.
-            unbindCamera()
         }
     }
 
@@ -647,7 +654,7 @@ class ThirdEyeService : LifecycleService() {
     }
 
     private fun unbindCamera() {
-        runCatching { cameraProvider?.unbindAll() }
+        capture?.let { owned -> runCatching { cameraProvider?.unbind(owned) } }
         capture = null
         cameraProvider = null
     }
@@ -803,6 +810,7 @@ class ThirdEyeService : LifecycleService() {
     private fun token(): String = prefs.getString("token", "").orEmpty()
 
     companion object {
+        private const val CAMERA_ATTEMPT_MS = 8_000L
         const val ACTION_STOP = "app.thirdeye.phone.STOP"
         const val PREFS = "thirdeye"
         const val CHANNEL_ID = "thirdeye_trigger"

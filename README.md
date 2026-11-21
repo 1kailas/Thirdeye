@@ -34,10 +34,12 @@
 - [How Sarvam AI is used](#how-sarvam-ai-is-used)
 - [Built with Devin](#built-with-devin)
 - [Quick start](#quick-start)
+- [Project website](#project-website)
 - [Using it](#using-it)
 - [Spatial guidance: "where is the button?"](#spatial-guidance-where-is-the-button)
+- [Dial guidance](#dial-guidance)
 - [Speed](#speed)
-- [Debugging tools](#debugging-tools)
+- [Local dashboard and history](#local-dashboard-and-history)
 - [Configuration](#configuration)
 - [Security, privacy and safety](#security-privacy-and-safety)
 - [Testing](#testing)
@@ -67,10 +69,10 @@ Thirdeye is built around three ideas:
 | **Read text aloud** | *"Read this label."* | Vision model, text copied exactly |
 | **Find a key by counting** | *"Where is the exit button?"* gives *"'EXIT' is in the fifth row from the top, first key from the left. Second row from the bottom."* | `locate` route, see below |
 | **Guide your finger** | With a finger visible: *"Move one key left and two rows down."* | `locate` route |
-| **Step-by-step appliance help** | *"How do I start this washing machine?"* gives one verified step at a time | `guide` route, before/after photo check |
+| **Step-by-step appliance help** | *"How do I turn the fan down?"* gives a physical landmark and one movement, with a photo check when the result is visible. | `guide` route, before/after photo check |
 | **Voice commands** | *repeat, stop, done, next step, where is the button, start over* (Malayalam and English) | Intent table |
 | **Safety refusal** | Gas, mains electricity, medical and industrial equipment get a caution, not instructions | Prompt rules and the guide schema |
-| **Admit uncertainty** | Blurry or cut-off label gives *"please take a clearer photo"* | Structured output checks |
+| **Explain missing evidence** | If the photo shows the dial scale but hides its pointer, the guide can explain which detail it still needs. | Structured guidance and retake handling |
 
 ## How it works
 
@@ -123,12 +125,12 @@ The scope is deliberately focused. The result is a working demo on a real phone,
 
 ## How Sarvam AI is used
 
-Every turn uses three Sarvam services. The server holds the API key, so it never reaches the phone.
+The server sends photos to vision, sends voice questions to speech recognition when present, and requests Malayalam audio for spoken replies. The API key is configured on the PC.
 
 | Stage | Sarvam service | Model | Why it fits |
 | --- | --- | --- | --- |
 | Hear | Speech-to-Text REST | `saaras:v4`, `language_code=unknown` | Indic-first recognition with automatic language detection. A user can speak Malayalam, English or Hindi without changing a setting. |
-| See | Chat Completions v2 with image input | `gemma4` (fallback `glm5.3-flash`) | Fast image understanding through `data:` URLs. We use strict `json_schema` structured output so the app gets typed results (`Answer`, `Locate`, `Guidance`, `Verification`) instead of free text. |
+| See | Chat Completions v2 with image input | `gemma4` (configurable alternative `glm5.3-flash`) | Fast image understanding through `data:` URLs. We use strict `json_schema` structured output so the app gets typed results (`Answer`, `Locate`, `Guidance`, `Verification`) instead of free text. |
 | Speak | Text-to-Speech REST | `bulbul:v4-flash`, `ml-IN` | Natural Malayalam voice. Calls run in parallel per sentence to get the first sound out sooner. |
 
 Engineering notes from working with the APIs:
@@ -160,20 +162,16 @@ cd Thirdeye
 cp .env.example .env && chmod 600 .env
 ```
 
-Edit `.env`:
+On the PC, generate a token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Set the following values in `.env`, replacing both placeholders.
 
-```sh
-SARVAM_API_KEY=<your key from dashboard.sarvam.ai>
+```dotenv
+SARVAM_API_KEY=your-sarvam-api-key
 CAMERA_URL=off
 HOST=0.0.0.0
-PHONE_TOKEN=<run: python -c "import secrets;print(secrets.token_urlsafe(32))">
+PHONE_TOKEN=paste-your-generated-token-here
 ```
 
-Then start it:
-
-```sh
-./run.sh        # creates .venv and installs dependencies on first run
-```
+Run `./start.sh` on Linux to start the server in the background. The first launch creates `.venv` and installs dependencies. Read the output in `logs/server.log` and use `./stop.sh` to stop it. For a foreground session, run `./run.sh`.
 
 ### 2. The phone
 
@@ -183,17 +181,19 @@ cd android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-On the phone: open **DrishtiGuide**, tap **Grant**, enable the **key service** in Accessibility settings, then tap **Start service**. The checklist in the app shows what is missing. On Android 13+ the key service may be greyed out for a sideloaded app. Install with `adb install` as above, or use the in-app **Allow restricted settings** button. Full steps are in [android/README.md](android/README.md).
+On the phone, open **DrishtiGuide**, tap **Grant**, and enable the **key service** in Accessibility settings. The checklist in the app shows what is missing. On Android 13+ the key service may be greyed out for a sideloaded app. Install with `adb install` as above, or use the in-app **Allow restricted settings** button. Full steps are in [android/README.md](android/README.md).
 
 ### 3. Pair
 
-With the server running, open `http://127.0.0.1:8000/pair` on the PC and scan the QR with the phone camera. If the camera app cannot open the link, copy the link text and tap **Paste pairing link** in the app. Or type `http://<pc-address>:8000` and the token by hand. Use Tailscale or a trusted Wi-Fi network, because the link is plain HTTP.
+With the server running, open `http://127.0.0.1:8000/pair` on the PC and scan the QR with the phone camera. If the camera app cannot open it, expand **Manual pairing link**, copy the link to your phone, and tap **Paste pairing link** in the app. Or type `http://<pc-address>:8000` and the token by hand. Use Tailscale or a trusted Wi-Fi network, because the link is plain HTTP.
 
-Run `python -m unittest discover -s tests` to check the server before you try it on a phone.
+Once paired, tap **തുടങ്ങുക** (Start) on the phone. You’ll hear the service and Volume Up instructions in Malayalam. Tap **നിർത്തുക** (Stop) to stop the phone service.
 
 ## Project website
 
-The static project site includes a playable Malayalam button-finder demo. To host it on GitHub Pages, open **Settings → Pages**, choose **Deploy from a branch**, then select **main** and **/docs**. The site entry point is [docs/index.html](docs/index.html).
+Try the button-finder demo in your browser and hear the Malayalam directions. [Project website](https://1kailas.github.io/Thirdeye/)
+
+GitHub Pages publishes the static site from the `/docs` folder on `main`. The phone and dashboard connect to the FastAPI server on your PC. [Site source](docs/index.html)
 
 ## Using it
 
@@ -203,7 +203,7 @@ The static project site includes a playable Malayalam button-finder demo. To hos
 | **Press and hold** | Photo immediately, a vibration pattern, then your voice is recorded while you hold (up to 20 s). Release to send. |
 | **Press while it is talking** | Stops the reply and starts a new request. |
 
-Things to try: *"What does this say?"*, *"Is this the right medicine strip?"*, *"What is in front of me?"*, *"Where is the exit button?"*, *"How do I start this washing machine?"*. Say *"stop"*, *"repeat"*, *"done"*, *"next step"* or *"start over"* at any time. Malayalam equivalents work too.
+Things to try: *"What does this say?"*, *"What is in front of me?"*, *"Where is the exit button?"*, *"How do I start this washing machine?"*. Say *"stop"*, *"repeat"*, *"done"*, *"next step"* or *"start over"* while holding Volume Up. Malayalam equivalents work too.
 
 ## Spatial guidance: "where is the button?"
 
@@ -233,13 +233,19 @@ Finger on '5' (row 3, col 2):  "Move one key left and two rows down."
   <br><em>Phone activity dashboard with example requests and a remote-control photo.</em>
 </p>
 
+## Dial guidance
+
+Hold **Volume Up** and ask, for example, “How do I turn this fan down to 1?” The guide reads the markings, locates the knob using a physical landmark, and describes how to move your hand. The direction depends on the dial in the photo.
+
+On a test dial with the pointer at three o’clock and the target at twelve, the guide said **“നോബിന്റെ മുകൾഭാഗം ഇടത്തേക്ക് വരത്തക്കവിധം ഏകദേശം കാൽ വട്ടം തിരിച്ച് നിർത്തൂ.”** This means “Turn the knob about a quarter-turn so its top moves left, then stop.” If only the direction is clear, it can suggest a small turn. Hold Volume Up and say **“ചെയ്തു”** (“done”) so the guide can check the new position in a photo.
+
 ## Speed
 
 The slow parts of a turn are speech-to-text, the vision model and speech synthesis. Three changes make it feel faster without changing quality:
 
 1. **Streaming reply.** The server answers as newline-delimited JSON: the text first, then audio parts as each is ready. The phone plays part 1 while part 2 is still being made.
 2. **Per-sentence parallel TTS.** The reply is split into at most three parts at sentence boundaries and synthesised concurrently.
-3. **Camera pre-warm.** The camera starts opening on key-down, so a quick press does not wait for it.
+3. **Camera pre-warm.** The camera starts opening on key-down, so capture can begin sooner. A stalled capture times out after eight seconds and the app retries once. If both attempts fail, it gives a Malayalam recovery message.
 
 Measured against the real Sarvam APIs from this PC, four runs per cell, an English-spoken question with a 720x1280 test photo of a remote. Results vary from run to run:
 
@@ -252,39 +258,41 @@ Measured against the real Sarvam APIs from this PC, four runs per cell, an Engli
 
 On the phone, the History screen shows *first sound* and *network* timings for every turn. Reproduce the table with `python scripts/bench_stream.py`.
 
-## Debugging tools
+## Local dashboard and history
 
-- **`/debug` (PC, localhost only).** Every phone request with its exact photo, a player for your recording, the transcript, detected language, route, key grid and timings. Files are kept in `debug/` (last 30). Turn it off with `PHONE_DEBUG=0`.
-- **Debug history (phone).** The last 20 turns with the uploaded photo, your recording, the reply and timings, and buttons to replay either.
-- **`/pair` (PC, localhost only).** QR pairing page.
-- **Benchmarks.** `scripts/bench_phone.py` and `scripts/bench_stream.py`.
-- **`scripts/make_demo_remote.py`** draws a synthetic remote so you can test the locate feature without a real photo.
+Open the dashboard on the computer running the server. Its sidebar has three pages.
+
+| Page | What you can do |
+| --- | --- |
+| [Phone activity](http://127.0.0.1:8000/) | Search the last 30 saved requests. Select one to inspect the submitted photo, original voice question, Malayalam reply, and available timings or button map. Saved history reloads after a server restart. |
+| [Camera workspace](http://127.0.0.1:8000/workspace) | Connect an IP Webcam stream, frame a control, ask a typed or dictated question, and compare before-and-after photos. [Browser guide](docs/BROWSER_UI.md) |
+| [Pair a phone](http://127.0.0.1:8000/pair) | Choose a network the phone can reach, then scan its QR code or open the manual pairing link. The code and link contain your access token. |
+
+The Android **Debug history** screen keeps the last 20 turns and lets you replay or clear them. On the PC, `/debug` also opens Phone activity when archiving is enabled. For repeatable demonstrations, `scripts/make_demo_remote.py` draws a sample remote and `scripts/bench_stream.py` measures response times.
 
 ## Configuration
 
 All settings live in `.env` (copy `.env.example`). Environment variables set before launch win.
 
-| Variable | Default | Meaning |
+| Variable | Example configuration | Meaning |
 | --- | --- | --- |
 | `SARVAM_API_KEY` | none | Required. Stays on the PC. |
-| `PHONE_TOKEN` | none | Bearer token for the phone API. Required when `HOST` is not localhost, at least 24 characters. |
+| `PHONE_TOKEN` | none | Required for phone requests. Binding to a non-loopback address requires at least 24 characters. |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Use `0.0.0.0` so the phone can connect. |
 | `CAMERA_URL` | IP Webcam URL | `off` when the phone supplies photos (recommended). |
-| `VISION_MODEL` / `VISION_FALLBACK_MODEL` | `gemma4` / `glm5.3-flash` | Vision models. |
+| `VISION_MODEL` / `VISION_FALLBACK_MODEL` | `gemma4` / `glm5.3-flash` | Vision model and the alternative suggested if access fails. Set `VISION_MODEL` and restart to switch. |
 | `STT_MODEL` / `LANGUAGE_CODE` | `saaras:v4` / `unknown` | `unknown` auto-detects speech; `ml-IN` pins Malayalam. |
 | `TTS_MODEL` / `TTS_VOICE` / `TTS_PACE` | `bulbul:v4-flash` / `simran_en_customer` / `0.95` | Malayalam voice settings. |
 | `IMAGE_MAX_WIDTH` / `JPEG_QUALITY` | `1280` / `82` | Image sent to the model. |
 | `PHONE_DEBUG` | `1` | Keep the `debug/` archive and `/debug` page. |
 | `PUBLIC_URL` | none | Extra address to offer on the `/pair` page. |
 
-Open **[Phone activity](http://127.0.0.1:8000/)** on the server computer to inspect saved photos, Malayalam replies, voice questions and request timings. Use **Camera workspace** for IP Webcam capture and typed or dictated questions. [Browser guide](docs/BROWSER_UI.md)
-
 ## Security, privacy and safety
 
 - **Token-protected phone API.** `Authorization: Bearer <PHONE_TOKEN>`, compared in constant time. The server will not bind to a non-local address without a token.
 - **Local-only pages.** The browser UI, `/debug` and `/pair` only accept connections from the PC itself.
 - **Limits.** Photos up to 16 MP / 6 MB, recordings up to 3 MB, requests up to 10 MB.
-- **Your data.** Photos and voice go to Sarvam for processing and are not stored by the app on any server. They stay in the phone's History and the PC's `debug/` folder, which you can clear or switch off. The Sarvam key never leaves the PC.
+- **Your data.** The server sends photos, voice questions, and reply text to Sarvam for processing. The phone keeps its own history. By default the PC also stores recent uploads and replies in `debug/`. Set `PHONE_DEBUG=0` and restart to stop new PC archives. Previously saved files remain on disk until you remove them.
 - **Plain HTTP.** The app talks HTTP, so use Tailscale or a network you trust. Never expose the server to the public internet.
 - **Safety behaviour.** The assistant refuses to give operating instructions for gas, mains electricity, medical or industrial equipment, never identifies people, and says when it cannot see something.
 - **Not a certified safety device.** This is an assistive prototype for low-risk everyday tasks. Do not rely on it for medicine dosage, hazards or navigation.
@@ -292,11 +300,13 @@ Open **[Phone activity](http://127.0.0.1:8000/)** on the server computer to insp
 ## Testing
 
 ```sh
-python -m unittest discover -s tests          # server: routing, locate maths, streaming, auth, debug
-cd android && ./gradlew testDebugUnitTest      # app: trigger state machine, audio queue, stream parser, history
+# From the repository root, after starting the server once
+.venv/bin/python -m pip install httpx
+.venv/bin/python -m unittest discover -s tests
+(cd android && ./gradlew testDebugUnitTest assembleDebug)
 ```
 
-CI runs both on every push, and builds the debug APK as an artifact. The suites are fully offline. Live Sarvam checks are opt-in: `DRISHTIGUIDE_LIVE=1 python -m unittest discover -s tests -p test_live.py`.
+CI runs both on every push, and builds the debug APK as an artifact. The suites are fully offline. To also check a configured IP Webcam and Sarvam account, run `DRISHTIGUIDE_LIVE=1 .venv/bin/python -m unittest discover -s tests -p test_live.py`.
 
 ## Project layout
 
@@ -306,11 +316,12 @@ task_engine.py      Schemas, prompts, task state, locate composer (Malayalam sen
 sarvam_client.py    Sarvam REST client (STT, vision, TTS) with retries and structured output
 camera.py           Optional IP Webcam reader (CAMERA_URL=off for phone-only)
 index.html          Local phone activity dashboard
-dashboard/          Dashboard assets and camera workspace
+dashboard/          Shared theme, navigation, camera workspace and pairing page
+start.sh / stop.sh  Linux background server launchers
 android/            Kotlin app: service, key filter, state machine, audio queue, Material 3 UI
 tests/              Offline server tests
 scripts/            Benchmarks and a synthetic remote generator
-docs/               Architecture, demo script, browser UI notes, images
+docs/               GitHub Pages site, architecture, demo script, browser guide and images
 ```
 
 ## Roadmap

@@ -383,7 +383,7 @@ class MainActivity : AppCompatActivity() {
         heroExplain.text = malayalamText(getString(explainRes))
         if (state == UiState.PROBLEM) {
             ThirdEyeService.instance?.lastStatus()?.takeIf { it.isNotEmpty() }?.let {
-                heroExplain.text = it.take(120)
+                heroExplain.text = malayalamText(it)
             }
         }
         if (state != lastAnnounced) {
