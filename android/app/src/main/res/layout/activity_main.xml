@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:contentDescription="DrishtiGuide app title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Server address"
+            android:textSize="16sp"
+            android:contentDescription="Server address label" />
+
+        <EditText
+            android:id="@+id/serverUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://100.x.y.z:8000"
+            android:inputType="textUri"
+            android:importantForAutofill="no"
+            android:contentDescription="Server address, for example http://100.64.0.1:8000" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Access token"
+            android:textSize="16sp"
+            android:contentDescription="Access token label" />
+
+        <EditText
+            android:id="@+id/token"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="PHONE_TOKEN from .env"
+            android:inputType="textPassword"
+            android:importantForAutofill="no"
+            android:contentDescription="Phone access token from the server .env file" />
+
+        <Button
+            android:id="@+id/grantPermissions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Grant camera, microphone and notification permissions"
+            android:contentDescription="Grant camera, microphone and notification permissions" />
+
+        <Button
+            android:id="@+id/allowRestricted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Allow restricted settings"
+            android:contentDescription="Open app info to allow restricted settings for sideloaded apps" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="12dp">
+
+            <Button
+                android:id="@+id/openAccessibility"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Accessibility settings"
+                android:contentDescription="Open accessibility settings to enable the DrishtiGuide key service" />
+
+            <TextView
+                android:id="@+id/accessibilityStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:padding="12dp"
+                android:text="Key service: unknown"
+                android:textSize="14sp"
+                android:contentDescription="Whether the DrishtiGuide key accessibility service is enabled" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/startStopService"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Start service"
+            android:contentDescription="Start or stop the DrishtiGuide trigger service" />
+
+        <Button
+            android:id="@+id/testConnection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Test connection"
+            android:contentDescription="Test the connection to the DrishtiGuide server" />
+
+        <Button
+            android:id="@+id/debugHistory"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Debug history"
+            android:contentDescription="Open the debug history of uploaded photos and voice questions" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Ready"
+            android:textSize="16sp"
+            android:contentDescription="Last status message" />
+
+        <Button
+            android:id="@+id/testButton"
+            android:layout_width="match_parent"
+            android:layout_height="220dp"
+            android:layout_marginTop="24dp"
+            android:text="TEST\nHold for voice"
+            android:textSize="22sp"
+            android:contentDescription="Test button. Tap for a photo question, press and hold to record a voice question." />
+    </LinearLayout>
+</ScrollView>

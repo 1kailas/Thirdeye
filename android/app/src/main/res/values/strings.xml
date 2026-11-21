@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DrishtiGuide</string>
+    <string name="accessibility_description">Lets DrishtiGuide detect Volume Up presses (quick press or press and hold) so you can take a photo and ask a question without touching the screen. It does not read your screen.</string>
+    <string name="notification_channel">thirdeye_trigger</string>
+    <string name="notification_channel_name">DrishtiGuide trigger</string>
+    <string name="notification_title">DrishtiGuide is listening</string>
+    <string name="notification_text">Press and hold Volume Up to ask with voice, or tap for a photo.</string>
+    <string name="notification_stop">Stop</string>
+    <string name="err_no_photo">Photo capture failed. Try again.</string>
+    <string name="err_network">Server unreachable. Check the address and that the PC app is running.</string>
+</resources>
